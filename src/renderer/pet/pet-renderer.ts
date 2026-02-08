@@ -262,8 +262,8 @@ export class PetRenderer implements IPetRenderer {
   constructor(config: PetRendererConfig, events: PetRendererEvents = {}) {
     this.config = {
       container: config.container,
-      width: config.width ?? config.container.clientWidth || 400,
-      height: config.height ?? config.container.clientHeight || 400,
+      width: config.width ?? (config.container.clientWidth || 400),
+      height: config.height ?? (config.container.clientHeight || 400),
       targetFPS: config.targetFPS ?? 30,
       antialias: config.antialias ?? true,
       pixelRatio: config.pixelRatio ?? Math.min(window.devicePixelRatio, 2),

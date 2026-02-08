@@ -3,6 +3,8 @@
  * 负责初始化 Three.js 渲染器和宠物显示
  */
 
+import { createPetRenderer, IPetRenderer, AnimationState as PetAnimationState } from './pet/pet-renderer';
+
 // ============================================================
 // 类型定义 (基于 contracts/ipc-api.md)
 // ============================================================
@@ -159,12 +161,21 @@ function checkWebGLSupport(): boolean {
 }
 
 // ============================================================
-// Three.js 初始化 (占位实现)
+// Three.js 渲染器实例
+// ============================================================
+
+/** 全局渲染器实例 */
+let petRenderer: IPetRenderer | null = null;
+
+/** 是否使用占位宠物（模型加载失败时使用） */
+let usePlaceholderPet = false;
+
+// ============================================================
+// Three.js 初始化
 // ============================================================
 
 /**
  * 初始化 Three.js 场景
- * TODO: T031-T033 将实现完整的渲染器
  */
 async function initThreeJS(): Promise<void> {
   console.log('[Renderer] Initializing Three.js scene...');
@@ -174,48 +185,246 @@ async function initThreeJS(): Promise<void> {
     throw new Error('您的浏览器不支持 WebGL，无法显示 3D 宠物');
   }
   
-  // TODO: Phase 3 (US1) 将实现以下功能:
-  // - T031: 实现 IPetRenderer 接口
-  // - T032: 实现 GLTF 模型加载器
-  // - T033: 配置透明背景场景
-  // - T034-T036: 实现动画系统
-  // - T037-T038: 实现宠物状态管理
+  // 创建渲染器实例
+  petRenderer = createPetRenderer(
+    {
+      container: petContainer,
+      width: petContainer.clientWidth || 300,
+      height: petContainer.clientHeight || 400,
+      targetFPS: 30,
+      antialias: true,
+      enableShadows: false, // 透明窗口不需要阴影
+    },
+    {
+      onModelLoaded: (model) => {
+        console.log('[Renderer] Model loaded:', model);
+      },
+      onAnimationChanged: (from, to) => {
+        console.log(`[Renderer] Animation changed: ${from || 'none'} -> ${to}`);
+      },
+      onAnimationFinished: (animation) => {
+        console.log('[Renderer] Animation finished:', animation);
+      },
+      onError: (error) => {
+        console.error('[Renderer] Renderer error:', error);
+        // 如果使用占位宠物，不显示模型加载错误（占位宠物已成功显示）
+        if (!usePlaceholderPet) {
+          showError(error.message);
+        }
+      },
+    }
+  );
   
-  console.log('[Renderer] Three.js placeholder initialized');
+  // 初始化渲染器
+  await petRenderer.init();
+  
+  console.log('[Renderer] Three.js initialized successfully');
 }
 
 /**
  * 加载宠物模型
- * TODO: T032 将实现完整的模型加载
+ * 如果没有模型文件，创建占位3D对象
  */
 async function loadPetModel(): Promise<void> {
   console.log('[Renderer] Loading pet model...');
   
-  // TODO: 实际实现将:
-  // 1. 通过 IPC 获取用户选择的皮肤
-  // 2. 加载对应的 GLTF/GLB 模型
-  // 3. 设置默认动画
+  if (!petRenderer) {
+    throw new Error('渲染器未初始化');
+  }
   
-  // 模拟加载延迟
-  await new Promise(resolve => setTimeout(resolve, 500));
+  // 预设使用占位宠物标志（因为 onError 回调可能在 catch 之前触发）
+  // 如果模型加载成功，会重置此标志
+  usePlaceholderPet = true;
   
-  console.log('[Renderer] Pet model placeholder loaded');
+  // 尝试加载模型，如果失败则创建占位对象
+  try {
+    // 尝试加载默认模型
+    const modelPath = './assets/models/pet-default.glb';
+    await petRenderer.loadModel({
+      modelPath,
+      scale: 1.0,
+      positionOffset: { x: 0, y: -0.5, z: 0 },
+    });
+    // 模型加载成功，重置标志
+    usePlaceholderPet = false;
+    console.log('[Renderer] Pet model loaded successfully');
+  } catch (modelError) {
+    console.warn('[Renderer] Failed to load model, creating placeholder:', modelError);
+    // usePlaceholderPet 已经是 true，保持不变
+    // 模型加载失败，创建占位3D对象
+    await createPlaceholderPet();
+    console.log('[Renderer] Placeholder pet created successfully');
+  }
+}
+
+/**
+ * 创建占位宠物（当没有GLB模型时使用）
+ * 创建一个简单的可爱球体作为临时宠物
+ */
+async function createPlaceholderPet(): Promise<void> {
+  console.log('[Renderer] Creating placeholder pet...');
+  
+  // 动态导入 Three.js（因为 PetRenderer 内部使用）
+  const THREE = await import('three');
+  
+  // 获取渲染器内部的场景（需要通过反射访问）
+  // 由于 PetRenderer 封装了内部实现，我们需要直接在容器中创建一个简单的场景
+  
+  // 创建一个简单的 Three.js 场景
+  const scene = new THREE.Scene();
+  
+  // 创建相机
+  const camera = new THREE.PerspectiveCamera(
+    45,
+    (petContainer.clientWidth || 300) / (petContainer.clientHeight || 400),
+    0.1,
+    1000
+  );
+  camera.position.set(0, 0, 5);
+  camera.lookAt(0, 0, 0);
+  
+  // 创建渲染器
+  const renderer = new THREE.WebGLRenderer({
+    alpha: true,
+    antialias: true,
+  });
+  renderer.setClearColor(0x000000, 0);
+  renderer.setSize(petContainer.clientWidth || 300, petContainer.clientHeight || 400);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  
+  // 清空容器并添加画布
+  petContainer.innerHTML = '';
+  petContainer.appendChild(renderer.domElement);
+  renderer.domElement.style.background = 'transparent';
+  
+  // 创建可爱的占位宠物 - 一个带有眼睛的球体
+  const petGroup = new THREE.Group();
+  
+  // 身体 - 粉色球体
+  const bodyGeometry = new THREE.SphereGeometry(1, 32, 32);
+  const bodyMaterial = new THREE.MeshPhongMaterial({
+    color: 0xff9eb5, // 粉色
+    shininess: 100,
+    specular: 0xffffff,
+  });
+  const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+  petGroup.add(body);
+  
+  // 左眼 - 白色球体
+  const eyeGeometry = new THREE.SphereGeometry(0.25, 16, 16);
+  const eyeWhiteMaterial = new THREE.MeshPhongMaterial({
+    color: 0xffffff,
+    shininess: 100,
+  });
+  const leftEyeWhite = new THREE.Mesh(eyeGeometry, eyeWhiteMaterial);
+  leftEyeWhite.position.set(-0.35, 0.3, 0.8);
+  petGroup.add(leftEyeWhite);
+  
+  // 右眼 - 白色球体
+  const rightEyeWhite = new THREE.Mesh(eyeGeometry, eyeWhiteMaterial);
+  rightEyeWhite.position.set(0.35, 0.3, 0.8);
+  petGroup.add(rightEyeWhite);
+  
+  // 左瞳孔 - 黑色球体
+  const pupilGeometry = new THREE.SphereGeometry(0.12, 16, 16);
+  const pupilMaterial = new THREE.MeshPhongMaterial({
+    color: 0x000000,
+  });
+  const leftPupil = new THREE.Mesh(pupilGeometry, pupilMaterial);
+  leftPupil.position.set(-0.35, 0.3, 0.95);
+  petGroup.add(leftPupil);
+  
+  // 右瞳孔 - 黑色球体
+  const rightPupil = new THREE.Mesh(pupilGeometry, pupilMaterial);
+  rightPupil.position.set(0.35, 0.3, 0.95);
+  petGroup.add(rightPupil);
+  
+  // 腮红 - 红色椭圆
+  const blushGeometry = new THREE.SphereGeometry(0.15, 16, 16);
+  blushGeometry.scale(1.5, 1, 0.3);
+  const blushMaterial = new THREE.MeshPhongMaterial({
+    color: 0xff6b8a,
+    transparent: true,
+    opacity: 0.6,
+  });
+  const leftBlush = new THREE.Mesh(blushGeometry, blushMaterial);
+  leftBlush.position.set(-0.6, -0.1, 0.85);
+  petGroup.add(leftBlush);
+  
+  const rightBlush = new THREE.Mesh(blushGeometry, blushMaterial);
+  rightBlush.position.set(0.6, -0.1, 0.85);
+  petGroup.add(rightBlush);
+  
+  // 微笑 - 使用曲线
+  const smileCurve = new THREE.QuadraticBezierCurve3(
+    new THREE.Vector3(-0.3, -0.2, 0.95),
+    new THREE.Vector3(0, -0.4, 0.95),
+    new THREE.Vector3(0.3, -0.2, 0.95)
+  );
+  const smileGeometry = new THREE.TubeGeometry(smileCurve, 20, 0.03, 8, false);
+  const smileMaterial = new THREE.MeshPhongMaterial({ color: 0x333333 });
+  const smile = new THREE.Mesh(smileGeometry, smileMaterial);
+  petGroup.add(smile);
+  
+  // 将宠物组添加到场景
+  scene.add(petGroup);
+  
+  // 添加灯光
+  const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+  scene.add(ambientLight);
+  
+  const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+  directionalLight.position.set(5, 10, 7);
+  scene.add(directionalLight);
+  
+  const fillLight = new THREE.DirectionalLight(0xffffff, 0.3);
+  fillLight.position.set(-5, 5, -5);
+  scene.add(fillLight);
+  
+  // 动画变量
+  let time = 0;
+  
+  // 渲染循环
+  function animate(): void {
+    requestAnimationFrame(animate);
+    
+    time += 0.016;
+    
+    // 呼吸效果 - 轻微缩放
+    const breathScale = 1 + Math.sin(time * 2) * 0.03;
+    petGroup.scale.set(breathScale, breathScale, breathScale);
+    
+    // 轻微摇摆
+    petGroup.rotation.z = Math.sin(time * 1.5) * 0.05;
+    petGroup.rotation.y = Math.sin(time * 0.8) * 0.1;
+    
+    // 眼睛跟随效果（模拟看向某处）
+    const eyeOffset = Math.sin(time * 0.5) * 0.05;
+    leftPupil.position.x = -0.35 + eyeOffset;
+    rightPupil.position.x = 0.35 + eyeOffset;
+    
+    renderer.render(scene, camera);
+  }
+  
+  // 启动动画
+  animate();
+  
+  console.log('[Renderer] Placeholder pet created successfully');
 }
 
 /**
  * 启动渲染循环
- * TODO: T041 将实现完整的渲染集成
  */
 function startRenderLoop(): void {
   console.log('[Renderer] Starting render loop...');
   
-  // TODO: 实际实现将:
-  // 1. 使用 requestAnimationFrame 循环
-  // 2. 更新动画混合器
-  // 3. 渲染场景
-  // 4. 空闲时降低帧率以节省资源 (T145)
-  
-  console.log('[Renderer] Render loop placeholder started');
+  if (petRenderer && petRenderer.isInitialized()) {
+    petRenderer.resume();
+    console.log('[Renderer] Render loop started via PetRenderer');
+  } else {
+    // 如果使用占位宠物，渲染循环已在 createPlaceholderPet 中启动
+    console.log('[Renderer] Render loop started (placeholder mode)');
+  }
 }
 
 // ============================================================
@@ -291,14 +500,18 @@ function cleanupIPCListeners(): void {
 
 /**
  * 处理宠物状态变化
- * TODO: T031-T032 将实现完整的动画切换
  */
 function handlePetStateChange(state: PetState): void {
-  // 将在 T031-T032 中实现:
-  // 1. 切换动画状态
-  // 2. 更新表情/情绪显示
-  // 3. 触发过渡动画
   console.log('[Renderer] Handling pet state change:', state.animation);
+  
+  // 如果渲染器可用，切换动画
+  if (petRenderer && petRenderer.isInitialized()) {
+    try {
+      petRenderer.setAnimation(state.animation as PetAnimationState);
+    } catch (error) {
+      console.warn('[Renderer] Failed to set animation:', error);
+    }
+  }
 }
 
 /**
@@ -384,6 +597,13 @@ async function init(): Promise<void> {
  */
 window.addEventListener('beforeunload', () => {
   cleanupIPCListeners();
+  
+  // 清理渲染器
+  if (petRenderer) {
+    petRenderer.dispose();
+    petRenderer = null;
+  }
+  
   console.log('[Renderer] Resources cleaned up');
 });
 

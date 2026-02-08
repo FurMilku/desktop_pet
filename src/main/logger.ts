@@ -248,5 +248,14 @@ export const petLogger = logger.createModuleLogger('Pet');
 export const ipcLogger = logger.createModuleLogger('IPC');
 export const dbLogger = logger.createModuleLogger('Database');
 
+/**
+ * 获取模块日志记录器（createModuleLogger 的别名）
+ * @param moduleName 模块名称
+ * @returns 模块专用日志记录器
+ */
+export function getLogger(moduleName: string) {
+  return logger.createModuleLogger(moduleName);
+}
+
 // 默认导出
 export default logger;
