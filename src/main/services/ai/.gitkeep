@@ -1,0 +1,5 @@
+# AI service providers
+# - ai-service.ts: AI服务统一接口
+# - openai-provider.ts: OpenAI实现
+# - claude-provider.ts: Claude实现
+# - ollama-provider.ts: Ollama本地实现

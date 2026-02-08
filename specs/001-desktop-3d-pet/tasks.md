@@ -28,8 +28,8 @@
 
 **Purpose**: 项目结构创建和基础配置
 
-- [ ] T001 Create Electron project structure with TypeScript per plan.md
-- [ ] T002 Initialize package.json with core dependencies: electron@28+, typescript@5.x, three@r160+, better-sqlite3, keytar, electron-log, @sentry/electron
+- [x] T001 Create Electron project structure with TypeScript per plan.md
+- [x] T002 Initialize package.json with core dependencies: electron@28+, typescript@5.x, three@r160+, better-sqlite3, keytar, electron-log, @sentry/electron
 - [ ] T003 [P] Configure TypeScript (tsconfig.json) for main/renderer/preload separation
 - [ ] T004 [P] Configure ESLint and Prettier for TypeScript/Electron
 - [ ] T005 [P] Create .gitignore with Electron/Node.js patterns

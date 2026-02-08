@@ -1,0 +1,111 @@
+{
+  "name": "desktop-3d-pet",
+  "version": "0.1.0",
+  "description": "透明窗口桌面3D宠物应用 - AI智能对话、工作助手、语音交互、照片换肤",
+  "main": "dist/main/index.js",
+  "author": "Desktop Pet Team",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "start": "electron .",
+    "lint": "eslint . --ext .ts,.tsx",
+    "lint:fix": "eslint . --ext .ts,.tsx --fix",
+    "format": "prettier --write \"src/**/*.{ts,tsx,json,css,html}\"",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "tsc --noEmit",
+    "typecheck:main": "tsc --noEmit -p tsconfig.main.json",
+    "typecheck:renderer": "tsc --noEmit -p tsconfig.renderer.json",
+    "typecheck:preload": "tsc --noEmit -p tsconfig.preload.json",
+    "rebuild": "electron-rebuild",
+    "postinstall": "electron-builder install-app-deps",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder",
+    "dist:win": "electron-builder --win",
+    "dist:mac": "electron-builder --mac",
+    "dist:linux": "electron-builder --linux"
+  },
+  "dependencies": {
+    "electron-log": "^5.1.1",
+    "@sentry/electron": "^4.18.0",
+    "better-sqlite3": "^9.4.3",
+    "keytar": "^7.9.0",
+    "three": "^0.162.0",
+    "openai": "^4.28.0",
+    "@anthropic-ai/sdk": "^0.17.1",
+    "ollama": "^0.5.0"
+  },
+  "devDependencies": {
+    "electron": "^28.2.2",
+    "electron-builder": "^24.13.3",
+    "electron-vite": "^2.0.0",
+    "electron-rebuild": "^3.2.9",
+    "typescript": "^5.3.3",
+    "@types/node": "^20.11.19",
+    "@types/better-sqlite3": "^7.6.9",
+    "@types/three": "^0.162.0",
+    "vite": "^5.1.4",
+    "vitest": "^1.3.1",
+    "@vitest/coverage-v8": "^1.3.1",
+    "eslint": "^8.57.0",
+    "@typescript-eslint/eslint-plugin": "^7.0.2",
+    "@typescript-eslint/parser": "^7.0.2",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-import": "^2.29.1",
+    "prettier": "^3.2.5"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "build": {
+    "appId": "com.desktoppet.app",
+    "productName": "Desktop 3D Pet",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "src/assets/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "src/assets/models",
+        "to": "models"
+      }
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "icon": "build/icon.ico"
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "icon": "build/icon.icns",
+      "category": "public.app-category.utilities"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "icon": "build/icons",
+      "category": "Utility"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  }
+}

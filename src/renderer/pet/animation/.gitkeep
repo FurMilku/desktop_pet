@@ -1,0 +1,3 @@
+# Animation System Module
+# 动画系统模块 - 包含动画混合器、状态机等
+# Files: animation-controller.ts, animation-states.ts, animation-mixer.ts

@@ -1,0 +1,5 @@
+# 工作助手服务
+# - reminder-service.ts: 提醒服务
+# - weather-service.ts: 天气查询
+# - app-launcher.ts: 应用启动器
+# - note-service.ts: 笔记服务

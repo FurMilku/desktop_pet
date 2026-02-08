@@ -1,0 +1,7 @@
+# Chat UI Module
+# 对话界面组件
+# - chat-ui.ts: 对话UI组件
+# - message-renderer.ts: 消息渲染
+# - chat-input.ts: 对话输入组件
+# - voice-input.ts: 语音输入组件
+# - voice-output.ts: 语音输出组件

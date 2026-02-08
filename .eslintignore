@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+build/
+out/
+.webpack/
+
+# Electron specific
+release/
+.electron/
+
+# Test coverage
+coverage/
+
+# Generated files
+*.min.js
+*.bundle.js
+
+# Static assets
+src/assets/
+
+# Type declarations
+*.d.ts
+
+# Config files (handled separately)
+*.config.js
+*.config.mjs
+*.config.cjs

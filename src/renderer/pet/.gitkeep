@@ -1,0 +1,6 @@
+# 3D Pet Rendering Module
+# 3D宠物渲染模块
+# - pet-renderer.ts: Three.js渲染器
+# - pet-model.ts: 宠物模型管理
+# - scene-setup.ts: 场景配置
+# - pet-state-manager.ts: 宠物状态管理

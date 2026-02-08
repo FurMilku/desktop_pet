@@ -1,0 +1,3 @@
+# IPC handlers directory
+# Electron main process IPC message handlers
+# See: specs/001-desktop-3d-pet/contracts/ipc-protocol.md

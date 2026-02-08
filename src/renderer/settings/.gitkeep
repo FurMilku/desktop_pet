@@ -1,0 +1,7 @@
+# Settings UI Module
+# 设置界面组件
+# - settings-ui.ts: 设置UI组件（带标签页）
+# - general-settings.ts: 常规设置标签
+# - ai-settings.ts: AI提供商设置标签
+# - appearance-settings.ts: 外观设置标签
+# - voice-settings.ts: 语音设置标签

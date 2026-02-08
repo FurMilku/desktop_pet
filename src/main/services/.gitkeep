@@ -1,0 +1,7 @@
+# Main Process Services
+# 主进程服务模块
+# - ai/: AI服务 (OpenAI, Claude, Ollama providers)
+# - assistant/: 工作助手服务 (提醒、天气、应用启动)
+# - voice/: 语音服务 (STT, TTS)
+# - skin/: 换肤服务 (品种识别、模型生成)
+# - storage/: 存储服务 (SQLite数据库、凭证存储)

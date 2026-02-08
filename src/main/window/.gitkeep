@@ -1,0 +1,4 @@
+# Window management modules
+# - main-window.ts: 透明无边框主窗口
+# - chat-window.ts: 对话界面窗口
+# - settings-window.ts: 设置界面窗口
