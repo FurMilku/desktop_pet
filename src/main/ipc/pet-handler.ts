@@ -43,6 +43,9 @@ export const PetChannels = {
   // Pet 操作
   GET: 'pet:get',
   GET_ALL: 'pet:get-all',
+  GET_STATE: 'pet:get-state',
+  SET_ANIMATION: 'pet:set-animation',
+  SAVE_POSITION: 'pet:save-position',
   CREATE: 'pet:create',
   UPDATE: 'pet:update',
   DELETE: 'pet:delete',
@@ -225,6 +228,150 @@ async function handleGetAllPets(_event: IpcMainInvokeEvent): Promise<Pet[]> {
   } catch (error) {
     logger.error('Failed to get all pets', error);
     throw createIPCError('ERR_INTERNAL', `Failed to get all pets: ${error}`);
+  }
+}
+
+/**
+ * PetState 接口（用于渲染进程）
+ */
+interface PetState {
+  animation: PetAnimationState;
+  position: {
+    x: number;
+    y: number;
+    monitor: number;
+  };
+  skinId: string;
+  emotionalValue: number;
+}
+
+/**
+ * 动画选项
+ */
+interface AnimationOptions {
+  duration?: number;
+  loop?: boolean;
+  transition?: string;
+}
+
+/**
+ * 位置信息
+ */
+interface PetPosition {
+  x: number;
+  y: number;
+  monitor: number;
+}
+
+/**
+ * 处理获取宠物状态请求（渲染进程使用）
+ */
+async function handleGetPetState(_event: IpcMainInvokeEvent): Promise<PetState> {
+  try {
+    logger.debug('Handle get pet state');
+    
+    const repo = getPetRepo();
+    const pet = repo.findFirst();
+    
+    if (!pet) {
+      // 确保存在默认宠物
+      const defaultPet = repo.ensureDefaultPet();
+      return {
+        animation: defaultPet.animationState,
+        position: {
+          x: defaultPet.positionX,
+          y: defaultPet.positionY,
+          monitor: defaultPet.displayIndex,
+        },
+        skinId: defaultPet.currentSkinId || 'default',
+        emotionalValue: 50, // 默认情绪值
+      };
+    }
+    
+    return {
+      animation: pet.animationState,
+      position: {
+        x: pet.positionX,
+        y: pet.positionY,
+        monitor: pet.displayIndex,
+      },
+      skinId: pet.currentSkinId || 'default',
+      emotionalValue: 50, // TODO: 从持久化存储中获取情绪值
+    };
+  } catch (error) {
+    logger.error('Failed to get pet state', error);
+    throw createIPCError('ERR_INTERNAL', `Failed to get pet state: ${error}`);
+  }
+}
+
+/**
+ * 处理设置动画请求
+ */
+async function handleSetAnimation(
+  _event: IpcMainInvokeEvent,
+  animation: PetAnimationState,
+  _options?: AnimationOptions
+): Promise<void> {
+  try {
+    logger.debug('Handle set animation', { animation });
+    
+    if (typeof animation !== 'string') {
+      throw createIPCError('ERR_INVALID_INPUT', 'animation must be a string');
+    }
+    
+    const repo = getPetRepo();
+    const pet = repo.findFirst();
+    
+    if (!pet) {
+      throw createIPCError('ERR_NOT_FOUND', 'No pet found');
+    }
+    
+    repo.updateAnimationState(pet.id, animation);
+    logger.debug('Animation state updated', { petId: pet.id, animation });
+  } catch (error) {
+    logger.error('Failed to set animation', error);
+    if ((error as IPCError).code) {
+      throw error;
+    }
+    throw createIPCError('ERR_INTERNAL', `Failed to set animation: ${error}`);
+  }
+}
+
+/**
+ * 处理保存位置请求
+ */
+async function handleSavePosition(
+  _event: IpcMainInvokeEvent,
+  position: PetPosition
+): Promise<void> {
+  try {
+    logger.debug('Handle save position', position);
+    
+    if (!position || typeof position !== 'object') {
+      throw createIPCError('ERR_INVALID_INPUT', 'position must be an object');
+    }
+    
+    validateNumber(position.x, 'x');
+    validateNumber(position.y, 'y');
+    if (position.monitor !== undefined) {
+      validateNumber(position.monitor, 'monitor', { min: 0 });
+    }
+    
+    const repo = getPetRepo();
+    const pet = repo.findFirst();
+    
+    if (!pet) {
+      throw createIPCError('ERR_NOT_FOUND', 'No pet found');
+    }
+    
+    repo.updatePosition(pet.id, position.x, position.y, position.monitor);
+    logger.debug('Position saved', { petId: pet.id, position });
+  } catch (error) {
+    logger.error('Failed to save position', error);
+    if ((error as IPCError).code) {
+      throw error;
+    }
+    throw createIPCError('ERR_INTERNAL', `Failed to save position: ${error}`);
   }
 }
 
@@ -715,6 +862,9 @@ export function registerPetHandlers(): void {
   // Pet 操作
   ipcMain.handle(PetChannels.GET, handleGetPet);
   ipcMain.handle(PetChannels.GET_ALL, handleGetAllPets);
+  ipcMain.handle(PetChannels.GET_STATE, handleGetPetState);
+  ipcMain.handle(PetChannels.SET_ANIMATION, handleSetAnimation);
+  ipcMain.handle(PetChannels.SAVE_POSITION, handleSavePosition);
   ipcMain.handle(PetChannels.GET_FIRST, handleGetFirstPet);
   ipcMain.handle(PetChannels.CREATE, handleCreatePet);
   ipcMain.handle(PetChannels.UPDATE, handleUpdatePet);
@@ -751,6 +901,9 @@ export function unregisterPetHandlers(): void {
   // Pet 操作
   ipcMain.removeHandler(PetChannels.GET);
   ipcMain.removeHandler(PetChannels.GET_ALL);
+  ipcMain.removeHandler(PetChannels.GET_STATE);
+  ipcMain.removeHandler(PetChannels.SET_ANIMATION);
+  ipcMain.removeHandler(PetChannels.SAVE_POSITION);
   ipcMain.removeHandler(PetChannels.GET_FIRST);
   ipcMain.removeHandler(PetChannels.CREATE);
   ipcMain.removeHandler(PetChannels.UPDATE);

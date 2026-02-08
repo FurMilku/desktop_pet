@@ -19,6 +19,9 @@ import { runMigrations, getCurrentSchemaVersion } from '../shared/services/migra
 import { getGlobalEventBus, EventBus } from '../shared/services/event-bus';
 import { getGlobalCapabilityRegistry } from '../shared/services/capability-registry';
 
+// IPC 处理器
+import { registerPetHandlers, unregisterPetHandlers } from './ipc/pet-handler';
+
 // 类型导入
 import { EventTypes, AppReadyPayload } from '../shared/types/events';
 
@@ -175,11 +178,14 @@ function initializeCapabilityRegistry(): void {
 function initializeIpcHandlers(): void {
   logger.info('Initializing IPC handlers...');
   
-  // TODO: T022 实现后在此引入 IPC 处理器
-  // import { registerIpcHandlers } from './ipc-handlers';
-  // registerIpcHandlers();
+  // 注册 Pet IPC 处理器
+  registerPetHandlers();
   
-  logger.info('IPC handlers initialized (placeholder)');
+  // TODO: T022 实现后在此引入其他 IPC 处理器
+  // import { registerSystemHandlers } from './ipc/system-handler';
+  // registerSystemHandlers();
+  
+  logger.info('IPC handlers initialized');
 }
 
 /**
@@ -432,6 +438,10 @@ function onWillQuit(event: Electron.Event): void {
   
   // 清理资源
   try {
+    // 注销 IPC 处理器
+    unregisterPetHandlers();
+    logger.info('IPC handlers unregistered');
+    
     // 关闭数据库连接
     if (databaseService) {
       databaseService.close();

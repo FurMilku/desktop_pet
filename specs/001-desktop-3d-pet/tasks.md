@@ -129,11 +129,11 @@
 ### Implementation for User Story 2
 
 - [x] T040 [US2] 实现鼠标点击检测 (Raycasting) in src/renderer/pet/pet-interaction.ts
-- [ ] T041 [US2] 实现宠物拖拽功能 in src/renderer/pet/pet-drag.ts
-- [ ] T042 [US2] 实现右键上下文菜单 in src/renderer/ui/context-menu.ts
-- [ ] T043 [P] [US2] 准备 happy 开心动画 in assets/animations/happy.glb
-- [ ] T044 [P] [US2] 准备 drag 拖拽动画 in assets/animations/drag.glb
-- [ ] T045 [P] [US2] 准备 curious 好奇动画 in assets/animations/curious.glb
+- [x] T041 [US2] 实现宠物拖拽功能 in src/renderer/pet/pet-drag.ts
+- [x] T042 [US2] 实现右键上下文菜单 in src/renderer/ui/context-menu.ts
+- [x] T043 [P] [US2] 准备 happy 开心动画 in assets/animations/happy.glb
+- [x] T044 [P] [US2] 准备 drag 拖拽动画 in assets/animations/drag.glb
+- [x] T045 [P] [US2] 准备 curious 好奇动画 in assets/animations/curious.glb
 
 **Checkpoint**: User Story 1 + 2 完成 - 宠物可显示和交互
 
