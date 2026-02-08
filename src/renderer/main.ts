@@ -4,15 +4,108 @@
  */
 
 // ============================================================
-// 类型定义 (后续将移至 shared/types)
+// 类型定义 (基于 contracts/ipc-api.md)
 // ============================================================
 
+// 动画状态类型
+type AnimationState =
+  | 'idle'
+  | 'thinking'
+  | 'happy'
+  | 'sad'
+  | 'confused'
+  | 'drag'
+  | 'listening'
+  | 'celebrating'
+  | 'sleepy'
+  | 'curious';
+
+// 宠物位置
+interface PetPosition {
+  x: number;
+  y: number;
+  monitor: number;
+}
+
+// 宠物状态
 interface PetState {
-  id: string;
-  name: string;
-  position: { x: number; y: number };
-  currentAnimation: string;
-  mood: string;
+  animation: AnimationState;
+  position: PetPosition;
+  skinId: string;
+  emotionalValue: number;
+}
+
+// 动画选项
+interface AnimationOptions {
+  transitionDuration?: number;
+  loop?: boolean;
+  nextState?: AnimationState;
+}
+
+// 显示器信息
+interface DisplayInfo {
+  id: number;
+  bounds: { x: number; y: number; width: number; height: number };
+  isPrimary: boolean;
+}
+
+// Window API
+interface WindowAPI {
+  move(x: number, y: number): Promise<void>;
+  getPosition(): Promise<{ x: number; y: number; monitor: number }>;
+  setAlwaysOnTop(alwaysOnTop: boolean): Promise<void>;
+  minimize(): Promise<void>;
+  getDisplays(): Promise<DisplayInfo[]>;
+}
+
+// Pet API
+interface PetAPI {
+  getState(): Promise<PetState>;
+  setAnimation(animation: AnimationState, options?: AnimationOptions): Promise<void>;
+  savePosition(position: PetPosition): Promise<void>;
+  onStateChanged(callback: (state: PetState) => void): () => void;
+}
+
+// Settings API (部分定义)
+interface SettingsAPI {
+  get<T>(key: string): Promise<T>;
+  set<T>(key: string, value: T): Promise<void>;
+  getAll(): Promise<Record<string, unknown>>;
+  reset(key?: string): Promise<void>;
+  onChanged(callback: (key: string, value: unknown) => void): () => void;
+}
+
+// System API (部分定义)
+interface SystemAPI {
+  getInfo(): Promise<{
+    platform: 'win32' | 'darwin' | 'linux';
+    version: string;
+    appVersion: string;
+    dataPath: string;
+    locale: string;
+  }>;
+  openExternal(target: string): Promise<void>;
+  quit(): Promise<void>;
+}
+
+// Electron API 接口 (暴露给渲染进程)
+interface ElectronAPI {
+  window: WindowAPI;
+  pet: PetAPI;
+  settings: SettingsAPI;
+  system: SystemAPI;
+  // 以下 API 将在后续用户故事中实现
+  // ai: AIAPI;
+  // reminder: ReminderAPI;
+  // voice: VoiceAPI;
+  // skin: SkinAPI;
+}
+
+// 扩展 Window 接口
+declare global {
+  interface Window {
+    electronAPI?: ElectronAPI;
+  }
 }
 
 // ============================================================
@@ -126,17 +219,27 @@ function startRenderLoop(): void {
 }
 
 // ============================================================
-// IPC 通信 (占位实现)
+// IPC 通信
 // ============================================================
 
 /**
  * 获取预加载脚本暴露的 API
- * TODO: T020-T021 将实现完整的 IPC 通信
+ * @returns ElectronAPI 或 undefined (浏览器环境)
  */
-function getElectronAPI(): unknown {
-  // @ts-expect-error - electronAPI 由 preload 脚本注入
+function getElectronAPI(): ElectronAPI | undefined {
   return window.electronAPI;
 }
+
+/**
+ * 当前宠物状态 (本地缓存)
+ */
+let currentPetState: PetState | null = null;
+
+/**
+ * 状态变化监听器清理函数
+ */
+let stateChangedUnsubscribe: (() => void) | null = null;
+let settingsChangedUnsubscribe: (() => void) | null = null;
 
 /**
  * 初始化 IPC 监听器
@@ -145,16 +248,96 @@ function initIPCListeners(): void {
   const api = getElectronAPI();
   
   if (!api) {
-    console.warn('[Renderer] electronAPI not available (running in browser?)');
+    console.warn('[Renderer] electronAPI not available (running in browser mode)');
     return;
   }
   
-  console.log('[Renderer] IPC listeners initialized');
+  console.log('[Renderer] Initializing IPC listeners...');
   
-  // TODO: 监听以下事件:
-  // - pet:state-changed - 宠物状态变化
-  // - reminder:triggered - 提醒触发
-  // - settings:changed - 设置变化
+  // 监听宠物状态变化
+  if (api.pet?.onStateChanged) {
+    stateChangedUnsubscribe = api.pet.onStateChanged((state: PetState) => {
+      console.log('[Renderer] Pet state changed:', state.animation);
+      currentPetState = state;
+      handlePetStateChange(state);
+    });
+  }
+  
+  // 监听设置变化
+  if (api.settings?.onChanged) {
+    settingsChangedUnsubscribe = api.settings.onChanged((key: string, value: unknown) => {
+      console.log('[Renderer] Settings changed:', key, value);
+      handleSettingsChange(key, value);
+    });
+  }
+  
+  console.log('[Renderer] IPC listeners initialized');
+}
+
+/**
+ * 清理 IPC 监听器
+ */
+function cleanupIPCListeners(): void {
+  if (stateChangedUnsubscribe) {
+    stateChangedUnsubscribe();
+    stateChangedUnsubscribe = null;
+  }
+  if (settingsChangedUnsubscribe) {
+    settingsChangedUnsubscribe();
+    settingsChangedUnsubscribe = null;
+  }
+  console.log('[Renderer] IPC listeners cleaned up');
+}
+
+/**
+ * 处理宠物状态变化
+ * TODO: T031-T032 将实现完整的动画切换
+ */
+function handlePetStateChange(state: PetState): void {
+  // 将在 T031-T032 中实现:
+  // 1. 切换动画状态
+  // 2. 更新表情/情绪显示
+  // 3. 触发过渡动画
+  console.log('[Renderer] Handling pet state change:', state.animation);
+}
+
+/**
+ * 处理设置变化
+ */
+function handleSettingsChange(key: string, value: unknown): void {
+  // 处理影响渲染的设置变化
+  switch (key) {
+    case 'window.opacity':
+      // 更新窗口透明度
+      console.log('[Renderer] Window opacity changed:', value);
+      break;
+    case 'pet.animationSpeed':
+      // 更新动画速度
+      console.log('[Renderer] Animation speed changed:', value);
+      break;
+    default:
+      // 其他设置变化
+      break;
+  }
+}
+
+/**
+ * 获取初始宠物状态
+ */
+async function loadInitialPetState(): Promise<void> {
+  const api = getElectronAPI();
+  
+  if (!api?.pet?.getState) {
+    console.warn('[Renderer] Pet API not available');
+    return;
+  }
+  
+  try {
+    currentPetState = await api.pet.getState();
+    console.log('[Renderer] Initial pet state loaded:', currentPetState?.animation);
+  } catch (error) {
+    console.error('[Renderer] Failed to load initial pet state:', error);
+  }
 }
 
 // ============================================================
@@ -179,10 +362,13 @@ async function init(): Promise<void> {
     // 3. 初始化 IPC 通信
     initIPCListeners();
     
-    // 4. 启动渲染循环
+    // 4. 加载初始宠物状态
+    await loadInitialPetState();
+    
+    // 5. 启动渲染循环
     startRenderLoop();
     
-    // 5. 隐藏加载状态
+    // 6. 隐藏加载状态
     hideLoading();
     
     console.log('[Renderer] Initialization complete');
@@ -192,6 +378,14 @@ async function init(): Promise<void> {
     showError(error instanceof Error ? error.message : '初始化失败');
   }
 }
+
+/**
+ * 窗口卸载时清理资源
+ */
+window.addEventListener('beforeunload', () => {
+  cleanupIPCListeners();
+  console.log('[Renderer] Resources cleaned up');
+});
 
 // ============================================================
 // 启动应用

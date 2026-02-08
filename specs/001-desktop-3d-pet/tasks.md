@@ -19,14 +19,14 @@
 
 **Purpose**: 项目初始化和基础结构创建
 
-- [ ] T001 初始化 Electron + TypeScript 项目，配置 package.json
-- [ ] T002 配置 TypeScript (tsconfig.json) 和构建工具 (electron-builder)
-- [ ] T003 [P] 配置 ESLint + Prettier 代码规范
-- [ ] T004 [P] 配置 Vitest 单元测试框架
-- [ ] T005 [P] 配置 Playwright E2E测试框架
-- [ ] T006 创建项目目录结构 (src/main/, src/renderer/, src/ai/, src/shared/, src/preload/, src/skills/, tests/, assets/, mcp-servers/)
-- [ ] T007 [P] 配置 .gitignore, .prettierignore, .eslintignore
-- [ ] T008 [P] 创建 README.md 项目说明文档
+- [x] T001 初始化 Electron + TypeScript 项目，配置 package.json
+- [x] T002 配置 TypeScript (tsconfig.json) 和构建工具 (electron-builder)
+- [x] T003 [P] 配置 ESLint + Prettier 代码规范
+- [x] T004 [P] 配置 Vitest 单元测试框架
+- [x] T005 [P] 配置 Playwright E2E测试框架
+- [x] T006 创建项目目录结构 (src/main/, src/renderer/, src/ai/, src/shared/, src/preload/, src/skills/, tests/, assets/, mcp-servers/)
+- [x] T007 [P] 配置 .gitignore, .prettierignore, .eslintignore
+- [x] T008 [P] 创建 README.md 项目说明文档
 
 ---
 
@@ -38,33 +38,33 @@
 
 ### 数据库与存储
 
-- [ ] T009 实现 SQLite 数据库服务 in src/shared/services/database.ts
-- [ ] T010 创建数据库 schema 和迁移脚本 in src/shared/services/migrations.ts
-- [ ] T011 [P] 实现凭证存储服务 (keytar) in src/shared/services/credential-store.ts
+- [x] T009 实现 SQLite 数据库服务 in src/shared/services/database.ts
+- [x] T010 创建数据库 schema 和迁移脚本 in src/shared/services/migrations.ts
+- [x] T011 [P] 实现凭证存储服务 (keytar) in src/shared/services/credential-store.ts
 
 ### 共享类型定义
 
-- [ ] T012 [P] 定义数据模型类型 in src/shared/types/models.ts
-- [ ] T013 [P] 定义事件总线类型 in src/shared/types/event-bus.ts
-- [ ] T014 [P] 定义事件类型常量和数据结构 in src/shared/types/events.ts
-- [ ] T015 [P] 定义能力接口类型 in src/shared/types/capabilities.ts
+- [x] T012 [P] 定义数据模型类型 in src/shared/types/models.ts
+- [x] T013 [P] 定义事件总线类型 in src/shared/types/event-bus.ts
+- [x] T014 [P] 定义事件类型常量和数据结构 in src/shared/types/events.ts
+- [x] T015 [P] 定义能力接口类型 in src/shared/types/capabilities.ts
 
 ### 核心服务
 
-- [ ] T016 实现事件总线核心服务 in src/shared/services/event-bus.ts
-- [ ] T017 实现能力注册表服务 in src/shared/services/capability-registry.ts
+- [x] T016 实现事件总线核心服务 in src/shared/services/event-bus.ts
+- [x] T017 实现能力注册表服务 in src/shared/services/capability-registry.ts
 
 ### Electron 主进程基础
 
-- [ ] T018 创建 Electron 主进程入口 in src/main/index.ts
-- [ ] T019 [P] 创建预加载脚本 in src/preload/index.ts
-- [ ] T020 [P] 实现日志服务 (electron-log) in src/main/logger.ts
-- [ ] T021 [P] 集成 Sentry 错误追踪 in src/main/sentry.ts
+- [x] T018 创建 Electron 主进程入口 in src/main/index.ts
+- [x] T019 [P] 创建预加载脚本 in src/preload/index.ts
+- [x] T020 [P] 实现日志服务 (electron-log) in src/main/logger.ts
+- [x] T021 [P] 集成 Sentry 错误追踪 in src/main/sentry.ts
 
 ### IPC 通信框架
 
-- [ ] T022 创建 IPC 处理器基础框架 in src/main/ipc-handlers.ts
-- [ ] T023 [P] 实现 Settings API IPC 处理器 in src/main/ipc/settings-handler.ts
+- [x] T022 创建 IPC 处理器基础框架 in src/main/ipc-handlers.ts
+- [x] T023 [P] 实现 Settings API IPC 处理器 in src/main/ipc/settings-handler.ts
 
 **Checkpoint**: 基础设施就绪 - 可开始用户故事实现
 
@@ -78,38 +78,38 @@
 
 ### Tests for User Story 1
 
-- [ ] T024 [P] [US1] E2E测试：应用启动和窗口显示 in tests/e2e/pet-display.test.ts
-- [ ] T025 [P] [US1] 单元测试：动画状态机 in tests/unit/pet/animation.test.ts
-- [ ] T026 [P] [US1] 单元测试：窗口管理器 in tests/unit/main/window-manager.test.ts
-- [ ] T026a [P] [US1] 单元测试：WebGL不支持降级处理 in tests/unit/pet/webgl-fallback.test.ts
+- [x] T024 [P] [US1] E2E测试：应用启动和窗口显示 in tests/e2e/pet-display.test.ts
+- [x] T025 [P] [US1] 单元测试：动画状态机 in tests/unit/pet/animation.test.ts
+- [x] T026 [P] [US1] 单元测试：窗口管理器 in tests/unit/main/window-manager.test.ts
+- [x] T026a [P] [US1] 单元测试：WebGL不支持降级处理 in tests/unit/pet/webgl-fallback.test.ts
 
 ### Implementation for User Story 1
 
 #### 窗口管理
 
-- [ ] T027 [US1] 实现透明无边框窗口管理器（含多显示器位置记忆）in src/main/window-manager.ts
-- [ ] T028 [US1] 实现 Window API IPC 处理器 in src/main/ipc/window-handler.ts
+- [x] T027 [US1] 实现透明无边框窗口管理器（含多显示器位置记忆）in src/main/window-manager.ts
+- [x] T028 [US1] 实现 Window API IPC 处理器 in src/main/ipc/window-handler.ts
 
 #### 3D渲染核心
 
-- [ ] T029 [US1] 创建渲染进程入口 in src/renderer/index.ts
-- [ ] T030 [US1] 创建入口 HTML in src/renderer/index.html
-- [ ] T031 [US1] 实现 Three.js 3D渲染器 in src/renderer/pet/pet-renderer.ts
-- [ ] T032 [US1] 实现骨骼动画系统 in src/renderer/pet/pet-animation.ts
+- [x] T029 [US1] 创建渲染进程入口 in src/renderer/main.ts
+- [x] T030 [US1] 创建入口 HTML in src/renderer/index.html
+- [x] T031 [US1] 实现 Three.js 3D渲染器 in src/renderer/pet/pet-renderer.ts
+- [x] T032 [US1] 实现骨骼动画系统 in src/renderer/pet/pet-animation.ts
 
 #### 数据模型
 
-- [ ] T033 [P] [US1] 创建 Pet 实体数据访问层 in src/shared/models/pet.ts
-- [ ] T034 [P] [US1] 创建 PetSkin 实体数据访问层 in src/shared/models/pet-skin.ts
+- [x] T033 [P] [US1] 创建 Pet 实体数据访问层 in src/shared/models/pet.ts
+- [x] T034 [P] [US1] 创建 PetSkin 实体数据访问层 in src/shared/models/pet-skin.ts
 
 #### Pet API
 
-- [ ] T035 [US1] 实现 Pet API IPC 处理器 in src/main/ipc/pet-handler.ts
+- [x] T035 [US1] 实现 Pet API IPC 处理器 in src/main/ipc/pet-handler.ts
 
 #### 资源文件
 
-- [ ] T036 [P] [US1] 准备默认宠物3D模型 in assets/models/default-pet.glb
-- [ ] T037 [P] [US1] 准备 idle 待机动画 in assets/animations/idle.glb
+- [x] T036 [P] [US1] 准备默认宠物3D模型 in assets/models/default-pet.glb
+- [x] T037 [P] [US1] 准备 idle 待机动画 in assets/animations/idle.glb
 
 **Checkpoint**: User Story 1 完成 - 可独立运行和测试，作为 MVP 展示
 
@@ -124,11 +124,11 @@
 ### Tests for User Story 2
 
 - [ ] T038 [P] [US2] E2E测试：宠物交互 in tests/e2e/pet-interaction.test.ts
-- [ ] T039 [P] [US2] 单元测试：用户交互处理 in tests/unit/pet/interaction.test.ts
+- [x] T039 [P] [US2] 单元测试：用户交互处理 in tests/unit/pet/interaction.test.ts
 
 ### Implementation for User Story 2
 
-- [ ] T040 [US2] 实现鼠标点击检测 (Raycasting) in src/renderer/pet/pet-interaction.ts
+- [x] T040 [US2] 实现鼠标点击检测 (Raycasting) in src/renderer/pet/pet-interaction.ts
 - [ ] T041 [US2] 实现宠物拖拽功能 in src/renderer/pet/pet-drag.ts
 - [ ] T042 [US2] 实现右键上下文菜单 in src/renderer/ui/context-menu.ts
 - [ ] T043 [P] [US2] 准备 happy 开心动画 in assets/animations/happy.glb
