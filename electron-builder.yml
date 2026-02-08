@@ -1,0 +1,188 @@
+# electron-builder 配置文件
+# 桌面3D小宠物 - Desktop 3D Pet Application
+
+appId: com.desktop-pet.app
+productName: Desktop 3D Pet
+copyright: Copyright © 2026
+
+# 构建目录配置
+directories:
+  output: dist
+  buildResources: build
+
+# 文件包含规则
+files:
+  - "out/**/*"
+  - "!out/**/*.map"
+  - "!out/**/*.ts"
+  - "package.json"
+
+# 额外资源（不参与 ASAR 打包）
+extraResources:
+  - from: "src/assets"
+    to: "assets"
+    filter:
+      - "**/*"
+
+# ASAR 打包配置
+asar: true
+asarUnpack:
+  # 原生模块需要解包
+  - "**/*.node"
+  - "**/better-sqlite3/**"
+  - "**/keytar/**"
+
+# 原生模块重新编译
+npmRebuild: true
+nodeGypRebuild: false
+
+# ============================================
+# Windows 配置
+# ============================================
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+    - target: portable
+      arch:
+        - x64
+  icon: build/icon.ico
+  # 请求管理员权限（用于某些系统功能）
+  requestedExecutionLevel: asInvoker
+
+# NSIS 安装器配置 (Windows)
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  installerHeaderIcon: build/icon.ico
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Desktop 3D Pet
+  # 安装语言
+  language: 2052  # 简体中文
+  # 安装包名称
+  artifactName: "${productName}-Setup-${version}.${ext}"
+
+# ============================================
+# macOS 配置
+# ============================================
+mac:
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+    - target: zip
+      arch:
+        - x64
+        - arm64
+  icon: build/icon.icns
+  category: public.app-category.utilities
+  # 硬化运行时（代码签名需要）
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  # 权限配置
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  # 签名配置（发布时需要配置）
+  # identity: "Developer ID Application: Your Name (XXXXXXXXXX)"
+
+# DMG 配置 (macOS)
+dmg:
+  backgroundColor: "#ffffff"
+  window:
+    width: 540
+    height: 380
+  contents:
+    - x: 130
+      y: 220
+    - x: 410
+      y: 220
+      type: link
+      path: /Applications
+  artifactName: "${productName}-${version}-${arch}.${ext}"
+
+# ============================================
+# Linux 配置
+# ============================================
+linux:
+  target:
+    - target: AppImage
+      arch:
+        - x64
+    - target: deb
+      arch:
+        - x64
+    - target: rpm
+      arch:
+        - x64
+  icon: build/icons
+  category: Utility
+  synopsis: A cute 3D desktop pet with AI capabilities
+  description: >
+    Desktop 3D Pet is a cross-platform desktop application featuring
+    a cute 3D pet that can interact with you, chat with AI, set reminders,
+    check weather, and more.
+  desktop:
+    Name: Desktop 3D Pet
+    Comment: Your AI-powered desktop companion
+    Categories: Utility;Office;
+    Keywords: pet;desktop;ai;assistant;
+  artifactName: "${productName}-${version}-${arch}.${ext}"
+
+# AppImage 配置 (Linux)
+appImage:
+  license: LICENSE
+
+# Deb 配置 (Linux)
+deb:
+  depends:
+    - gconf2
+    - gconf-service
+    - libnotify4
+    - libappindicator1
+    - libxtst6
+    - libnss3
+    - libsecret-1-0  # keytar 依赖
+  afterInstall: build/linux/after-install.sh
+  afterRemove: build/linux/after-remove.sh
+
+# ============================================
+# 发布配置
+# ============================================
+publish:
+  provider: generic
+  url: https://example.com/releases
+  # 可选：GitHub Releases
+  # provider: github
+  # owner: your-username
+  # repo: desktop-3d-pet
+  # releaseType: release
+
+# ============================================
+# 自动更新配置
+# ============================================
+# 注意：自动更新需要代码签名
+# Windows: 需要 EV 代码签名证书
+# macOS: 需要 Developer ID Application 证书
+
+# ============================================
+# 代码签名配置（占位符）
+# ============================================
+# Windows 代码签名
+# win:
+#   certificateFile: path/to/certificate.pfx
+#   certificatePassword: ${env.WIN_CSC_KEY_PASSWORD}
+#   signingHashAlgorithms:
+#     - sha256
+
+# macOS 代码签名和公证
+# afterSign: scripts/notarize.js
+# mac:
+#   identity: "Developer ID Application: Your Name (XXXXXXXXXX)"
+#   notarize:
+#     teamId: "XXXXXXXXXX"

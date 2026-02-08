@@ -5,54 +5,122 @@ node_modules/
 
 # Build outputs
 dist/
-build/
 out/
+build/
 *.tsbuildinfo
 
-# Electron specific
+# Electron-specific
 release/
-*.asar
+.electron-builder.env
+*.snap
+*.deb
+*.rpm
+*.AppImage
+*.dmg
+*.exe
+*.msi
+*.blockmap
+*.yml.bak
 
-# IDE
-.idea/
-.vscode/
-*.swp
-*.swo
-*~
-
-# OS
-.DS_Store
-Thumbs.db
-Desktop.ini
+# TypeScript
+*.tsbuildinfo
+tsconfig.tsbuildinfo
 
 # Logs
+logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+lerna-debug.log*
 electron-debug.log*
-logs/
 
-# Environment
+# Environment variables
 .env
 .env.local
-.env.*.local
-*.local
+.env.development
+.env.test
+.env.production
+.env*.local
 
-# Testing
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# Test coverage
 coverage/
 .nyc_output/
 
-# Misc
-*.tmp
-*.temp
+# Cache directories
 .cache/
+.parcel-cache/
+.npm/
+.eslintcache
+.prettiercache
+*.tscache
 
-# SQLite database files (development)
-*.db
+# Native modules build artifacts
+*.node
+*.obj
+*.pdb
+build/Release/
+prebuilds/
+
+# SQLite databases (local development)
 *.sqlite
 *.sqlite3
+*.db
+
+# Sentry
+.sentryclirc
 
 # User data (development)
 userData/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.temp
+
+# Package manager lock files (keep one)
+# Uncomment the ones you don't use:
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml
+
+# Electron packager output
+*.asar
+*.asar.unpacked
+
+# Assets that should not be committed
+# (uncomment if using placeholder assets)
+# src/assets/models/*.glb
+# src/assets/models/*.gltf
+
+# Memory bank and specs (optional - remove if you want to track these)
+# memory-bank/
+# specs/

@@ -30,9 +30,9 @@
 
 - [x] T001 Create Electron project structure with TypeScript per plan.md
 - [x] T002 Initialize package.json with core dependencies: electron@28+, typescript@5.x, three@r160+, better-sqlite3, keytar, electron-log, @sentry/electron
-- [ ] T003 [P] Configure TypeScript (tsconfig.json) for main/renderer/preload separation
-- [ ] T004 [P] Configure ESLint and Prettier for TypeScript/Electron
-- [ ] T005 [P] Create .gitignore with Electron/Node.js patterns
+- [x] T003 [P] Configure TypeScript (tsconfig.json) for main/renderer/preload separation
+- [x] T004 [P] Configure ESLint and Prettier for TypeScript/Electron
+- [x] T005 [P] Create .gitignore with Electron/Node.js patterns
 - [ ] T006 [P] Setup Electron build configuration (electron-builder.yml)
 - [ ] T007 Create src/main/index.ts entry point skeleton
 - [ ] T008 Create src/renderer/index.html and src/renderer/main.ts skeleton
