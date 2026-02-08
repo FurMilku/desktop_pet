@@ -1,395 +1,360 @@
 # Tasks: 桌面3D小宠物
 
-**Input**: Design documents from `/specs/001-desktop-3d-pet/`  
-**Prerequisites**: plan.md ✓, spec.md ✓, data-model.md ✓, contracts/ ✓, research.md ✓
+**Input**: Design documents from `/specs/001-desktop-3d-pet/`
+**Prerequisites**: plan.md ✓, spec.md ✓, research.md ✓, data-model.md ✓, contracts/ ✓
 
-**Organization**: Tasks are grouped by user story to enable independent implementation and testing of each story.
+**Tests**: 本项目遵循测试优先原则，每个用户故事包含测试任务。
 
-## Format: `[ID] [P?] [Story] Description`
+**Organization**: 任务按用户故事分组，支持独立实现和测试。
 
-- **[P]**: Can run in parallel (different files, no dependencies)
-- **[Story]**: Which user story this task belongs to (US1-US6)
-- Include exact file paths in descriptions
+## Format: `[ID] [P?] [Story?] Description`
 
-## User Stories Reference
-
-| Story | Priority | Title | Goal |
-|-------|----------|-------|------|
-| US1 | P1 | 透明窗口3D宠物显示 | 在桌面显示带动画的3D宠物 |
-| US2 | P2 | 基础交互：拖拽与点击 | 用户可点击、拖拽宠物 |
-| US3 | P3 | AI智能对话 | 与宠物进行自然语言对话 |
-| US4 | P4 | 工作助手 | 提醒、天气、应用启动 |
-| US5 | P5 | 语音交互 | 语音输入和语音回复 |
-| US6 | P6 | 照片换肤 | 上传照片生成自定义宠物模型 |
+- **[P]**: 可并行执行（不同文件，无依赖）
+- **[Story]**: 任务所属用户故事（US1-US6）
+- 包含精确文件路径
 
 ---
 
-## Phase 1: Setup (项目初始化)
+## Phase 1: Setup（项目初始化）
 
-**Purpose**: 项目结构创建和基础配置
+**Purpose**: 项目初始化和基础结构创建
 
-- [x] T001 Create Electron project structure with TypeScript per plan.md
-- [x] T002 Initialize package.json with core dependencies: electron@28+, typescript@5.x, three@r160+, better-sqlite3, keytar, electron-log, @sentry/electron
-- [x] T003 [P] Configure TypeScript (tsconfig.json) for main/renderer/preload separation
-- [x] T004 [P] Configure ESLint and Prettier for TypeScript/Electron
-- [x] T005 [P] Create .gitignore with Electron/Node.js patterns
-- [ ] T006 [P] Setup Electron build configuration (electron-builder.yml)
-- [ ] T007 Create src/main/index.ts entry point skeleton
-- [ ] T008 Create src/renderer/index.html and src/renderer/main.ts skeleton
-- [ ] T009 Create src/preload/index.ts with contextBridge skeleton
-- [ ] T010 [P] Create src/shared/types/ directory structure for shared type definitions
-- [ ] T011 [P] Create src/shared/constants.ts with IPC channel names per ipc-protocol.md
-- [ ] T012 Setup Vitest configuration for unit testing in vitest.config.ts
-- [ ] T013 [P] Create default 3D pet model placeholder in src/assets/models/default-pet.glb
+- [ ] T001 初始化 Electron + TypeScript 项目，配置 package.json
+- [ ] T002 配置 TypeScript (tsconfig.json) 和构建工具 (electron-builder)
+- [ ] T003 [P] 配置 ESLint + Prettier 代码规范
+- [ ] T004 [P] 配置 Vitest 单元测试框架
+- [ ] T005 [P] 配置 Playwright E2E测试框架
+- [ ] T006 创建项目目录结构 (src/main/, src/renderer/, src/ai/, src/shared/, src/preload/, src/skills/, tests/, assets/, mcp-servers/)
+- [ ] T007 [P] 配置 .gitignore, .prettierignore, .eslintignore
+- [ ] T008 [P] 创建 README.md 项目说明文档
 
 ---
 
-## Phase 2: Foundational (阻塞性基础设施)
+## Phase 2: Foundational（基础设施）
 
-**Purpose**: 核心基础设施，所有用户故事都依赖这些组件
+**Purpose**: 核心基础设施，必须在所有用户故事前完成
 
-**⚠️ CRITICAL**: 此阶段必须完成后才能开始任何用户故事
+**⚠️ CRITICAL**: 此阶段完成前不能开始任何用户故事
 
-### 2.1 数据库与存储
+### 数据库与存储
 
-- [ ] T014 Implement SQLite database service in src/main/services/storage/database.ts
-- [ ] T015 Create database schema migrations in src/main/services/storage/migrations/001_initial.sql per data-model.md
-- [ ] T016 [P] Implement credential store service in src/main/services/storage/credential-store.ts using keytar
-- [ ] T017 Create database initialization and migration runner in src/main/services/storage/migrator.ts
+- [ ] T009 实现 SQLite 数据库服务 in src/shared/services/database.ts
+- [ ] T010 创建数据库 schema 和迁移脚本 in src/shared/services/migrations.ts
+- [ ] T011 [P] 实现凭证存储服务 (keytar) in src/shared/services/credential-store.ts
 
-### 2.2 IPC通信基础
+### 共享类型定义
 
-- [ ] T018 Define IPC type definitions in src/shared/types/ipc.ts per ipc-protocol.md
-- [ ] T019 Implement IPC handler registration framework in src/main/ipc/handlers.ts
-- [ ] T020 Implement preload script with contextBridge API in src/preload/index.ts per ipc-protocol.md
-- [ ] T021 Create IPC client wrapper for renderer in src/renderer/shared/ipc-client.ts
+- [ ] T012 [P] 定义数据模型类型 in src/shared/types/models.ts
+- [ ] T013 [P] 定义事件总线类型 in src/shared/types/event-bus.ts
+- [ ] T014 [P] 定义事件类型常量和数据结构 in src/shared/types/events.ts
+- [ ] T015 [P] 定义能力接口类型 in src/shared/types/capabilities.ts
 
-### 2.3 窗口管理
+### 核心服务
 
-- [ ] T022 Implement transparent frameless main window in src/main/window/main-window.ts
-- [ ] T023 [P] Implement system tray manager in src/main/tray/tray-manager.ts
+- [ ] T016 实现事件总线核心服务 in src/shared/services/event-bus.ts
+- [ ] T017 实现能力注册表服务 in src/shared/services/capability-registry.ts
 
-### 2.4 日志与错误追踪
+### Electron 主进程基础
 
-- [ ] T024 [P] Configure electron-log in src/main/services/logger.ts with rotation
-- [ ] T025 [P] Configure Sentry integration in src/main/services/sentry.ts (opt-in)
+- [ ] T018 创建 Electron 主进程入口 in src/main/index.ts
+- [ ] T019 [P] 创建预加载脚本 in src/preload/index.ts
+- [ ] T020 [P] 实现日志服务 (electron-log) in src/main/logger.ts
+- [ ] T021 [P] 集成 Sentry 错误追踪 in src/main/sentry.ts
 
-### 2.5 共享类型定义
+### IPC 通信框架
 
-- [ ] T026 [P] Create pet types in src/shared/types/pet.ts per data-model.md
-- [ ] T027 [P] Create conversation types in src/shared/types/conversation.ts per data-model.md
-- [ ] T028 [P] Create reminder types in src/shared/types/reminder.ts per data-model.md
-- [ ] T029 [P] Create settings types in src/shared/types/settings.ts per data-model.md
-- [ ] T030 [P] Create AI provider types in src/shared/types/ai-provider.ts per ai-service.md
+- [ ] T022 创建 IPC 处理器基础框架 in src/main/ipc-handlers.ts
+- [ ] T023 [P] 实现 Settings API IPC 处理器 in src/main/ipc/settings-handler.ts
 
-**Checkpoint**: 基础设施就绪 - 用户故事实现可以开始
+**Checkpoint**: 基础设施就绪 - 可开始用户故事实现
 
 ---
 
 ## Phase 3: User Story 1 - 透明窗口3D宠物显示 (Priority: P1) 🎯 MVP
 
-**Goal**: 用户启动应用后，在桌面上看到3D宠物，窗口透明，宠物播放待机动画
+**Goal**: 用户启动应用后，在桌面上看到一个可爱的3D小宠物，窗口背景透明，宠物播放待机动画
 
-**Independent Test**: 启动应用→观察宠物显示→动画自动播放→窗口置顶
+**Independent Test**: 启动应用，观察宠物是否正确显示在透明窗口中，动画是否流畅播放
 
-### 3.1 Three.js渲染器
+### Tests for User Story 1
 
-- [ ] T031 [US1] Implement IPetRenderer interface in src/renderer/pet/pet-renderer.ts per pet-service.md
-- [ ] T032 [US1] Implement GLTF model loader in src/renderer/pet/pet-model.ts
-- [ ] T033 [US1] Configure Three.js scene with transparent background in src/renderer/pet/scene-setup.ts
+- [ ] T024 [P] [US1] E2E测试：应用启动和窗口显示 in tests/e2e/pet-display.test.ts
+- [ ] T025 [P] [US1] 单元测试：动画状态机 in tests/unit/pet/animation.test.ts
+- [ ] T026 [P] [US1] 单元测试：窗口管理器 in tests/unit/main/window-manager.test.ts
+- [ ] T026a [P] [US1] 单元测试：WebGL不支持降级处理 in tests/unit/pet/webgl-fallback.test.ts
 
-### 3.2 动画系统
+### Implementation for User Story 1
 
-- [ ] T034 [US1] Implement IAnimationController interface in src/renderer/pet/animation/animation-controller.ts per pet-service.md
-- [ ] T035 [US1] Create animation state machine in src/renderer/pet/animation/animation-states.ts
-- [ ] T036 [US1] Implement animation mixer wrapper in src/renderer/pet/animation/animation-mixer.ts
+#### 窗口管理
 
-### 3.3 宠物状态管理
+- [ ] T027 [US1] 实现透明无边框窗口管理器（含多显示器位置记忆）in src/main/window-manager.ts
+- [ ] T028 [US1] 实现 Window API IPC 处理器 in src/main/ipc/window-handler.ts
 
-- [ ] T037 [US1] Implement IPetStateManager interface in src/renderer/pet/pet-state-manager.ts per pet-service.md
-- [ ] T038 [US1] Create Pet entity repository in src/main/services/storage/repositories/pet-repository.ts
+#### 3D渲染核心
 
-### 3.4 IPC集成
+- [ ] T029 [US1] 创建渲染进程入口 in src/renderer/index.ts
+- [ ] T030 [US1] 创建入口 HTML in src/renderer/index.html
+- [ ] T031 [US1] 实现 Three.js 3D渲染器 in src/renderer/pet/pet-renderer.ts
+- [ ] T032 [US1] 实现骨骼动画系统 in src/renderer/pet/pet-animation.ts
 
-- [ ] T039 [US1] Implement pet:get-state handler in src/main/ipc/handlers/pet-handlers.ts
-- [ ] T040 [US1] Implement pet:save-state handler in src/main/ipc/handlers/pet-handlers.ts
+#### 数据模型
 
-### 3.5 主窗口集成
+- [ ] T033 [P] [US1] 创建 Pet 实体数据访问层 in src/shared/models/pet.ts
+- [ ] T034 [P] [US1] 创建 PetSkin 实体数据访问层 in src/shared/models/pet-skin.ts
 
-- [ ] T041 [US1] Integrate Three.js renderer with main window in src/renderer/main.ts
-- [ ] T042 [US1] Implement window always-on-top toggle in src/main/window/main-window.ts
-- [ ] T043 [US1] Restore pet position from database on startup in src/renderer/pet/pet-state-manager.ts
+#### Pet API
 
-**Checkpoint**: User Story 1 完成 - 3D宠物可在透明窗口中显示并播放待机动画
+- [ ] T035 [US1] 实现 Pet API IPC 处理器 in src/main/ipc/pet-handler.ts
+
+#### 资源文件
+
+- [ ] T036 [P] [US1] 准备默认宠物3D模型 in assets/models/default-pet.glb
+- [ ] T037 [P] [US1] 准备 idle 待机动画 in assets/animations/idle.glb
+
+**Checkpoint**: User Story 1 完成 - 可独立运行和测试，作为 MVP 展示
 
 ---
 
 ## Phase 4: User Story 2 - 基础交互：拖拽与点击 (Priority: P2)
 
-**Goal**: 用户可以点击宠物触发反应动画，拖拽宠物移动到任意位置
+**Goal**: 用户可以点击宠物触发反应动画，拖拽宠物移动位置，双击打开对话界面
 
-**Independent Test**: 单击宠物→播放反应动画 / 拖拽宠物→位置跟随移动 / 双击→打开对话界面
+**Independent Test**: 点击宠物观察反应动画，拖拽宠物观察位置变化
 
-### 4.1 交互处理器
+### Tests for User Story 2
 
-- [ ] T044 [US2] Implement IInteractionHandler interface in src/renderer/pet/interaction/interaction-handler.ts per pet-service.md
-- [ ] T045 [US2] Implement click detection with Raycasting in src/renderer/pet/interaction/click-handler.ts
-- [ ] T046 [US2] Implement drag handling with bounds constraint in src/renderer/pet/interaction/drag-handler.ts
+- [ ] T038 [P] [US2] E2E测试：宠物交互 in tests/e2e/pet-interaction.test.ts
+- [ ] T039 [P] [US2] 单元测试：用户交互处理 in tests/unit/pet/interaction.test.ts
 
-### 4.2 反应动画
+### Implementation for User Story 2
 
-- [ ] T047 [US2] Add click reaction animations (happy jump, wave) in src/renderer/pet/animation/animation-states.ts
-- [ ] T048 [US2] Implement triggerReaction method in src/renderer/pet/pet-state-manager.ts
+- [ ] T040 [US2] 实现鼠标点击检测 (Raycasting) in src/renderer/pet/pet-interaction.ts
+- [ ] T041 [US2] 实现宠物拖拽功能 in src/renderer/pet/pet-drag.ts
+- [ ] T042 [US2] 实现右键上下文菜单 in src/renderer/ui/context-menu.ts
+- [ ] T043 [P] [US2] 准备 happy 开心动画 in assets/animations/happy.glb
+- [ ] T044 [P] [US2] 准备 drag 拖拽动画 in assets/animations/drag.glb
+- [ ] T045 [P] [US2] 准备 curious 好奇动画 in assets/animations/curious.glb
 
-### 4.3 双击打开对话窗口
-
-- [ ] T049 [US2] Create chat window shell in src/main/window/chat-window.ts
-- [ ] T050 [US2] Implement window:open-chat IPC handler in src/main/ipc/handlers/window-handlers.ts
-- [ ] T051 [US2] Connect double-click to open chat window in src/renderer/pet/interaction/click-handler.ts
-
-### 4.4 右键菜单
-
-- [ ] T052 [US2] Implement context menu in src/renderer/pet/interaction/context-menu.ts
-- [ ] T053 [US2] Add menu items: 设置、最小化到托盘、退出
-
-### 4.5 位置持久化
-
-- [ ] T054 [US2] Save pet position on drag end in src/renderer/pet/pet-state-manager.ts
-- [ ] T055 [US2] Implement screen bounds detection for multi-monitor in src/main/services/display-service.ts
-
-**Checkpoint**: User Story 2 完成 - 用户可与宠物进行基础交互
+**Checkpoint**: User Story 1 + 2 完成 - 宠物可显示和交互
 
 ---
 
 ## Phase 5: User Story 3 - AI智能对话 (Priority: P3)
 
-**Goal**: 用户通过对话界面与宠物进行自然语言对话，AI生成回复并调整宠物表情
+**Goal**: 用户可以与宠物进行自然语言对话，AI生成回复，宠物表情随之变化
 
-**Independent Test**: 打开对话界面→输入问题→AI回复→宠物表情变化
+**Independent Test**: 打开对话界面，输入问题，观察AI回复和宠物动画
 
-### 5.1 AI服务核心
+### Tests for User Story 3
 
-- [ ] T056 [US3] Implement IAIService interface in src/main/services/ai/ai-service.ts per ai-service.md
-- [ ] T057 [US3] Implement IAIProvider interface base class in src/main/services/ai/base-provider.ts
+- [ ] T046 [P] [US3] E2E测试：AI对话流程 in tests/e2e/ai-chat.test.ts
+- [ ] T047 [P] [US3] 单元测试：Chat管理器 in tests/unit/ai/chat-manager.test.ts
+- [ ] T048 [P] [US3] 集成测试：AI服务集成 in tests/integration/ai-integration.test.ts
+- [ ] T048a [P] [US3] 单元测试：20轮对话上下文保持 (SC-006) in tests/unit/ai/conversation-context.test.ts
 
-### 5.2 AI提供商实现
+### Implementation for User Story 3
 
-- [ ] T058 [P] [US3] Implement OpenAI provider in src/main/services/ai/providers/openai-provider.ts
-- [ ] T059 [P] [US3] Implement Claude provider in src/main/services/ai/providers/claude-provider.ts
-- [ ] T060 [P] [US3] Implement Ollama provider in src/main/services/ai/providers/ollama-provider.ts
+#### 数据模型
 
-### 5.3 降级策略与缓存
+- [ ] T049 [P] [US3] 创建 Conversation 实体数据访问层 in src/shared/models/conversation.ts
+- [ ] T050 [P] [US3] 创建 Message 实体数据访问层 in src/shared/models/message.ts
+- [ ] T051 [P] [US3] 创建 AIProvider 实体数据访问层 in src/shared/models/ai-provider.ts
 
-- [ ] T061 [US3] Implement provider fallback logic in src/main/services/ai/ai-service.ts per ai-service.md degradation strategy
-- [ ] T062 [US3] Implement response cache in src/main/services/ai/response-cache.ts per data-model.md response_cache table
-- [ ] T063 [US3] Create ai_providers repository in src/main/services/storage/repositories/ai-provider-repository.ts
+#### AI Chat能力
 
-### 5.4 对话存储
+- [ ] T052 [US3] 实现 Chat 能力管理器 in src/ai/chat/chat-manager.ts
+- [ ] T053 [P] [US3] 实现 OpenAI Provider in src/ai/chat/providers/openai-provider.ts
+- [ ] T054 [P] [US3] 实现 Claude Provider in src/ai/chat/providers/claude-provider.ts
+- [ ] T055 [P] [US3] 实现 Ollama Provider in src/ai/chat/providers/ollama-provider.ts
 
-- [ ] T064 [US3] Create conversations repository in src/main/services/storage/repositories/conversation-repository.ts
-- [ ] T065 [US3] Create messages repository in src/main/services/storage/repositories/message-repository.ts
+#### AI服务初始化
 
-### 5.5 对话IPC处理器
+- [ ] T056 [US3] 实现 AI 服务初始化器 in src/main/ai-service.ts
 
-- [ ] T066 [US3] Implement chat:send-message handler in src/main/ipc/handlers/chat-handlers.ts
-- [ ] T067 [US3] Implement chat:send-message-stream handler with SSE in src/main/ipc/handlers/chat-handlers.ts
-- [ ] T068 [US3] Implement chat:get-history handler in src/main/ipc/handlers/chat-handlers.ts
-- [ ] T069 [US3] Implement chat:list-conversations handler in src/main/ipc/handlers/chat-handlers.ts
+#### IPC API
 
-### 5.6 对话界面
+- [ ] T057 [US3] 实现 AI API IPC 处理器 in src/main/ipc/ai-handler.ts
 
-- [ ] T070 [US3] Create chat UI component in src/renderer/chat/chat-ui.ts
-- [ ] T071 [US3] Implement message renderer with streaming support in src/renderer/chat/message-renderer.ts
-- [ ] T072 [US3] Create chat input component with send button in src/renderer/chat/chat-input.ts
+#### UI组件
 
-### 5.7 表情联动
+- [ ] T058 [US3] 实现对话气泡组件 in src/renderer/ui/chat-bubble.ts
+- [ ] T059 [US3] 实现独立聊天窗口组件 in src/renderer/ui/chat-window.ts
 
-- [ ] T073 [US3] Parse emotion tag from AI response in src/main/services/ai/emotion-parser.ts
-- [ ] T074 [US3] Connect AI emotion to pet state in src/renderer/chat/chat-pet-bridge.ts
-- [ ] T075 [US3] Add thinking animation trigger during AI processing in src/renderer/pet/pet-state-manager.ts
+#### 宠物-AI桥接
 
-**Checkpoint**: User Story 3 完成 - AI对话功能可用，宠物表情随回复变化
+- [ ] T060 [US3] 实现宠物-AI桥接器 in src/renderer/pet/pet-ai-bridge.ts
+
+#### 动画资源
+
+- [ ] T061 [P] [US3] 准备 thinking 思考动画 in assets/animations/thinking.glb
+- [ ] T062 [P] [US3] 准备 sad 难过动画 in assets/animations/sad.glb
+- [ ] T063 [P] [US3] 准备 confused 困惑动画 in assets/animations/confused.glb
+
+**Checkpoint**: User Story 1-3 完成 - 宠物可显示、交互、对话
 
 ---
 
-## Phase 6: User Story 4 - 工作助手 (Priority: P4)
+## Phase 6: User Story 4 - 工作助手：提醒与快捷操作 (Priority: P4)
 
-**Goal**: 用户可通过自然语言让宠物设置提醒、查询天气、打开应用
+**Goal**: 用户可以通过自然语言让宠物设置提醒、查询天气、打开应用程序
 
-**Independent Test**: 说"提醒我3点开会"→创建提醒 / "今天北京天气"→返回天气 / "打开记事本"→启动应用
+**Independent Test**: 请求宠物设置提醒、查询天气、打开应用，验证各功能
 
-### 6.1 Function Calling集成
+### Tests for User Story 4
 
-- [ ] T076 [US4] Define tool definitions in src/main/services/ai/tools/tool-definitions.ts per ai-service.md
-- [ ] T077 [US4] Implement tool executor in src/main/services/ai/tools/tool-executor.ts
+- [ ] T064 [P] [US4] 单元测试：提醒服务 in tests/unit/services/reminder.test.ts
+- [ ] T065 [P] [US4] 单元测试：MCP管理器 in tests/unit/ai/mcp-manager.test.ts
+- [ ] T066 [P] [US4] 单元测试：Skills管理器 in tests/unit/ai/skills-manager.test.ts
+- [ ] T067 [P] [US4] 集成测试：MCP服务器集成 in tests/integration/mcp-integration.test.ts
 
-### 6.2 提醒服务
+### Implementation for User Story 4
 
-- [ ] T078 [US4] Implement reminder service in src/main/services/assistant/reminder-service.ts
-- [ ] T079 [US4] Create reminders repository in src/main/services/storage/repositories/reminder-repository.ts
-- [ ] T080 [US4] Implement reminder scheduler with system notifications in src/main/services/assistant/reminder-scheduler.ts
-- [ ] T081 [US4] Implement set_reminder tool in src/main/services/ai/tools/set-reminder-tool.ts
+#### 数据模型
 
-### 6.3 提醒IPC处理器
+- [ ] T068 [US4] 创建 Reminder 实体数据访问层 in src/shared/models/reminder.ts
 
-- [ ] T082 [US4] Implement reminder:create handler in src/main/ipc/handlers/reminder-handlers.ts
-- [ ] T083 [US4] Implement reminder:list handler in src/main/ipc/handlers/reminder-handlers.ts
-- [ ] T084 [US4] Implement reminder:complete handler in src/main/ipc/handlers/reminder-handlers.ts
-- [ ] T085 [US4] Implement reminder:triggered event emitter in src/main/ipc/handlers/reminder-handlers.ts
+#### 提醒功能
 
-### 6.4 天气服务
+- [ ] T069 [US4] 实现提醒服务 in src/main/services/reminder-service.ts
+- [ ] T070 [US4] 实现 Reminder API IPC 处理器 in src/main/ipc/reminder-handler.ts
 
-- [ ] T086 [US4] Implement weather service in src/main/services/assistant/weather-service.ts
-- [ ] T087 [US4] Implement get_weather tool in src/main/services/ai/tools/get-weather-tool.ts
-- [ ] T088 [US4] Implement system:get-weather handler in src/main/ipc/handlers/system-handlers.ts
+#### System API
 
-### 6.5 应用启动服务
+- [ ] T071 [US4] 实现 System API IPC 处理器 in src/main/ipc/system-handler.ts
 
-- [ ] T089 [US4] Implement app launcher service in src/main/services/assistant/app-launcher.ts
-- [ ] T090 [US4] Implement open_application tool in src/main/services/ai/tools/open-application-tool.ts
-- [ ] T091 [US4] Implement system:launch-app handler in src/main/ipc/handlers/system-handlers.ts
+#### 系统托盘
 
-### 6.6 笔记服务
+- [ ] T072 [US4] 实现系统托盘管理器 in src/main/tray-manager.ts
 
-- [ ] T092 [US4] Implement note service in src/main/services/assistant/note-service.ts
-- [ ] T093 [US4] Implement create_note tool in src/main/services/ai/tools/create-note-tool.ts
-- [ ] T094 [US4] Implement system:create-note handler in src/main/ipc/handlers/system-handlers.ts
+#### MCP能力
 
-### 6.7 提醒动画联动
+- [ ] T073 [US4] 实现 MCP 服务器管理器 in src/ai/mcp/mcp-manager.ts
 
-- [ ] T095 [US4] Add remind animation to pet state manager in src/renderer/pet/pet-state-manager.ts
-- [ ] T096 [US4] Connect reminder:triggered event to pet animation in src/renderer/main.ts
+#### MCP服务器实现
 
-**Checkpoint**: User Story 4 完成 - 工作助手功能可用
+- [ ] T074 [P] [US4] 实现 system-tools MCP服务器 in mcp-servers/system-tools/index.ts
+- [ ] T075 [P] [US4] 实现 reminder MCP服务器 in mcp-servers/reminder/index.ts
+- [ ] T076 [P] [US4] 实现 notes MCP服务器 in mcp-servers/notes/index.ts
+- [ ] T077 [P] [US4] 实现 weather-api MCP服务器 in mcp-servers/weather-api/index.ts
+- [ ] T078 [P] [US4] 实现 calendar MCP服务器 in mcp-servers/calendar/index.ts
+
+#### Skills能力
+
+- [ ] T079 [US4] 实现 Skills 管理器 in src/ai/skills/skills-manager.ts
+
+#### 技能定义
+
+- [ ] T080 [P] [US4] 创建 weather 技能 in src/skills/weather/meta.json, skill.md
+- [ ] T081 [P] [US4] 创建 reminder 技能 in src/skills/reminder/meta.json, skill.md
+- [ ] T082 [P] [US4] 创建 notes 技能 in src/skills/notes/meta.json, skill.md
+- [ ] T083 [P] [US4] 创建 app-launcher 技能 in src/skills/app-launcher/meta.json, skill.md
+- [ ] T084 [P] [US4] 创建 calendar 技能 in src/skills/calendar/meta.json, skill.md
+- [ ] T085 [P] [US4] 创建 quick-search 技能 in src/skills/quick-search/meta.json, skill.md
+
+#### Memory能力
+
+- [ ] T086 [US4] 实现 Memory 管理器 in src/ai/memory/memory-manager.ts
+
+#### Agent能力
+
+- [ ] T087 [US4] 实现 Agent 管理器 in src/ai/agent/agent-manager.ts
+
+#### 动画资源
+
+- [ ] T088 [P] [US4] 准备 celebrating 庆祝动画 in assets/animations/celebrating.glb
+
+**Checkpoint**: User Story 1-4 完成 - 宠物具备完整助手功能
 
 ---
 
 ## Phase 7: User Story 5 - 语音交互 (Priority: P5)
 
-**Goal**: 用户可通过语音与宠物对话，宠物可语音回复
+**Goal**: 用户可以通过语音与宠物对话，宠物可以用语音回复
 
-**Independent Test**: 点击麦克风→说话→文字显示 / AI回复→语音播放
+**Independent Test**: 点击麦克风，说话，听取宠物语音回复
 
-### 7.1 语音识别服务
+### Tests for User Story 5
 
-- [ ] T097 [US5] Implement STT service interface in src/main/services/voice/stt-service.ts
-- [ ] T098 [US5] Implement Web Speech API adapter in src/main/services/voice/web-speech-adapter.ts
-- [ ] T099 [US5] Implement voice:start-recognition handler in src/main/ipc/handlers/voice-handlers.ts
-- [ ] T100 [US5] Implement voice:stop-recognition handler in src/main/ipc/handlers/voice-handlers.ts
+- [ ] T089 [P] [US5] 单元测试：语音识别服务 in tests/unit/services/voice-recognition.test.ts
+- [ ] T090 [P] [US5] 单元测试：语音合成服务 in tests/unit/services/voice-synthesis.test.ts
 
-### 7.2 语音合成服务
+### Implementation for User Story 5
 
-- [ ] T101 [US5] Implement TTS service interface in src/main/services/voice/tts-service.ts
-- [ ] T102 [US5] Implement platform-specific TTS (say/espeak/SAPI) in src/main/services/voice/platform-tts.ts
-- [ ] T103 [US5] Implement voice:synthesize handler in src/main/ipc/handlers/voice-handlers.ts
-- [ ] T104 [US5] Implement voice:list-voices handler in src/main/ipc/handlers/voice-handlers.ts
+- [ ] T091 [US5] 实现语音识别服务 (STT) in src/main/services/voice-recognition.ts
+- [ ] T092 [US5] 实现语音合成服务 (TTS) in src/main/services/voice-synthesis.ts
+- [ ] T093 [US5] 实现 Voice API IPC 处理器 in src/main/ipc/voice-handler.ts
+- [ ] T094 [US5] 实现语音输入UI组件 in src/renderer/ui/voice-input.ts
+- [ ] T095 [P] [US5] 准备 listening 倾听动画 in assets/animations/listening.glb
 
-### 7.3 语音UI集成
-
-- [ ] T105 [US5] Add microphone button to chat UI in src/renderer/chat/voice-input.ts
-- [ ] T106 [US5] Add audio playback for TTS in src/renderer/chat/voice-output.ts
-- [ ] T107 [US5] Add listening animation to pet in src/renderer/pet/animation/animation-states.ts
-
-### 7.4 语音设置
-
-- [ ] T108 [US5] Add voice settings to user settings in src/main/services/storage/repositories/settings-repository.ts
-- [ ] T109 [US5] Create voice settings UI section in src/renderer/settings/voice-settings.ts
-
-**Checkpoint**: User Story 5 完成 - 语音交互功能可用
+**Checkpoint**: User Story 1-5 完成 - 支持语音交互
 
 ---
 
 ## Phase 8: User Story 6 - 照片换肤 (Priority: P6)
 
-**Goal**: 用户上传宠物照片，系统识别品种并生成3D模型
+**Goal**: 用户可以上传宠物照片，系统识别品种并生成3D模型
 
-**Independent Test**: 上传照片→品种识别→3D模型生成→应用到宠物
+**Independent Test**: 上传照片，观察品种识别结果，查看生成的3D模型
 
-### 8.1 品种识别
+### Tests for User Story 6
 
-- [ ] T110 [US6] Implement breed detector service in src/main/services/skin/breed-detector.ts
-- [ ] T111 [US6] Integrate TensorFlow.js breed classification model in src/main/services/skin/tf-breed-model.ts
-- [ ] T112 [US6] Implement skin:detect-breed handler in src/main/ipc/handlers/skin-handlers.ts
+- [ ] T096 [P] [US6] 单元测试：品种识别服务 in tests/unit/services/breed-recognition.test.ts
+- [ ] T097 [P] [US6] 单元测试：3D模型生成服务 in tests/unit/services/model-generation.test.ts
 
-### 8.2 照片上传与存储
+### Implementation for User Story 6
 
-- [ ] T113 [US6] Implement skin:upload-photo handler in src/main/ipc/handlers/skin-handlers.ts
-- [ ] T114 [US6] Create pet_skins repository in src/main/services/storage/repositories/skin-repository.ts
-- [ ] T115 [US6] Implement file system storage for skins in src/main/services/skin/skin-storage.ts
+- [ ] T098 [US6] 实现品种识别服务 in src/main/services/breed-recognition.ts
+- [ ] T099 [US6] 实现3D模型生成服务 (TripoSR/Meshy) in src/main/services/model-generation.ts
+- [ ] T100 [US6] 实现骨骼自动绑定服务 in src/main/services/rig-binding.ts
+- [ ] T101 [US6] 实现 Skin API IPC 处理器 in src/main/ipc/skin-handler.ts
+- [ ] T102 [US6] 实现换肤向导UI组件 in src/renderer/ui/skin-wizard.ts
 
-### 8.3 3D模型生成
-
-- [ ] T116 [US6] Implement model generator service interface in src/main/services/skin/model-generator.ts
-- [ ] T117 [US6] Implement local TripoSR adapter in src/main/services/skin/triposr-adapter.ts
-- [ ] T118 [US6] Implement Meshy API adapter as fallback in src/main/services/skin/meshy-adapter.ts
-- [ ] T119 [US6] Implement skin:generate-model handler with progress events in src/main/ipc/handlers/skin-handlers.ts
-
-### 8.4 骨骼绑定
-
-- [ ] T120 [US6] Implement auto rigging service in src/main/services/skin/auto-rigger.ts
-- [ ] T121 [US6] Map generated model to predefined skeleton in src/main/services/skin/skeleton-mapper.ts
-
-### 8.5 换肤UI
-
-- [ ] T122 [US6] Create skin wizard UI in src/renderer/skin/skin-wizard.ts
-- [ ] T123 [US6] Create photo upload component in src/renderer/skin/photo-upload.ts
-- [ ] T124 [US6] Create breed confirmation UI in src/renderer/skin/breed-confirm.ts
-- [ ] T125 [US6] Create model preview component in src/renderer/skin/model-preview.ts
-
-### 8.6 皮肤应用
-
-- [ ] T126 [US6] Implement skin:apply handler in src/main/ipc/handlers/skin-handlers.ts
-- [ ] T127 [US6] Implement pet:list-skins handler in src/main/ipc/handlers/pet-handlers.ts
-- [ ] T128 [US6] Connect skin change to pet renderer in src/renderer/pet/pet-state-manager.ts
-
-**Checkpoint**: User Story 6 完成 - 照片换肤功能可用
+**Checkpoint**: 所有用户故事完成 - 完整功能
 
 ---
 
-## Phase 9: Polish & Cross-Cutting Concerns
+## Phase 9: Polish & 跨领域关注点
 
-**Purpose**: 跨功能优化和收尾工作
+**Purpose**: 完善和优化
 
-### 9.1 设置系统
+### 设置与配置
 
-- [ ] T129 Create settings window in src/main/window/settings-window.ts
-- [ ] T130 Implement settings:get handler in src/main/ipc/handlers/settings-handlers.ts
-- [ ] T131 Implement settings:set handler in src/main/ipc/handlers/settings-handlers.ts
-- [ ] T132 Implement settings:get-all handler in src/main/ipc/handlers/settings-handlers.ts
-- [ ] T133 Create settings UI with tabs in src/renderer/settings/settings-ui.ts
-- [ ] T134 [P] Create general settings tab in src/renderer/settings/general-settings.ts
-- [ ] T135 [P] Create AI provider settings tab in src/renderer/settings/ai-settings.ts
-- [ ] T136 [P] Create appearance settings tab in src/renderer/settings/appearance-settings.ts
+- [ ] T103 实现设置面板UI组件 in src/renderer/ui/settings-panel.ts
+- [ ] T104 实现自动更新服务（含HTTPS签名验证）in src/main/auto-updater.ts
+- [ ] T105 实现开机自启动功能 in src/main/auto-launch.ts
 
-### 9.2 系统功能
+### 动画补充
 
-- [ ] T137 Implement startup on boot option in src/main/services/system/auto-launch.ts
-- [ ] T138 Implement window:minimize-to-tray handler in src/main/ipc/handlers/window-handlers.ts
-- [ ] T139 Implement window:quit handler in src/main/ipc/handlers/window-handlers.ts
-- [ ] T140 Implement system:get-displays handler in src/main/ipc/handlers/system-handlers.ts
+- [ ] T106 [P] 准备 sleepy 瞌睡动画 in assets/animations/sleepy.glb
 
-### 9.3 错误处理与用户体验
+### 图标资源
 
-- [ ] T141 Add global error boundary in src/renderer/main.ts
-- [ ] T142 Implement WebGL support detection with friendly error in src/renderer/pet/webgl-check.ts
-- [ ] T143 Add loading states for all async operations in src/renderer/shared/loading-state.ts
-- [ ] T144 Add empty states for conversations and reminders
+- [ ] T107 [P] 准备系统托盘图标 in assets/icons/tray-icon.png
+- [ ] T108 [P] 准备应用图标 in assets/icons/app-icon.ico
 
-### 9.4 性能优化
+### 样式
 
-- [ ] T145 Implement FPS throttling when idle in src/renderer/pet/pet-renderer.ts
-- [ ] T146 Add memory management for model loading in src/renderer/pet/pet-model.ts
-- [ ] T147 Optimize SQLite queries with proper indexing in src/main/services/storage/database.ts
+- [ ] T109 [P] 创建全局样式文件 in src/renderer/styles/global.css
+- [ ] T110 [P] 创建UI组件样式 in src/renderer/styles/components.css
 
-### 9.5 文档与测试
+### 文档
 
-- [ ] T148 [P] Create README.md with setup instructions
-- [ ] T149 [P] Create user guide in docs/user-guide.md
-- [ ] T150 [P] Add unit tests for AI service in tests/unit/ai-service.test.ts
-- [ ] T151 [P] Add unit tests for database operations in tests/unit/database.test.ts
-- [ ] T152 Run quickstart.md validation scenarios
+- [ ] T111 [P] 更新 README.md 使用说明
+- [ ] T112 [P] 创建 API 文档 in docs/api.md
+- [ ] T113 运行 quickstart.md 验证所有功能
 
-**Checkpoint**: 项目完成 - 所有用户故事实现并优化
+### 性能优化
+
+- [ ] T114 性能优化：确保30fps渲染帧率
+- [ ] T115 性能优化：确保<5s应用启动时间
+- [ ] T116 性能优化：确保<300MB内存占用
+
+### 构建与发布
+
+- [ ] T117 配置 electron-builder 打包配置
+- [ ] T118 构建 Windows 安装包
+- [ ] T119 [P] 构建 macOS 安装包
+- [ ] T120 [P] 构建 Linux 安装包
 
 ---
 
@@ -397,117 +362,155 @@
 
 ### Phase Dependencies
 
-```
-Phase 1 (Setup)
-    │
-    ▼
-Phase 2 (Foundational) ─── BLOCKS ALL USER STORIES
-    │
-    ├──────────────────────────────────────────────┐
-    │                                              │
-    ▼                                              ▼
-Phase 3 (US1: 3D显示)                    (其他US可并行开发)
-    │
-    ▼
-Phase 4 (US2: 交互) ─── 依赖 US1 的渲染器
-    │
-    ▼
-Phase 5 (US3: AI对话) ─── 依赖 US2 的对话窗口
-    │
-    ▼
-Phase 6 (US4: 工作助手) ─── 依赖 US3 的AI服务
-    │
-    ▼
-Phase 7 (US5: 语音) ─── 依赖 US3 的对话UI
-    │
-    ▼
-Phase 8 (US6: 换肤) ─── 依赖 US1 的渲染器
-    │
-    ▼
-Phase 9 (Polish)
-```
+- **Setup (Phase 1)**: 无依赖 - 可立即开始
+- **Foundational (Phase 2)**: 依赖 Setup 完成 - **阻塞所有用户故事**
+- **User Stories (Phase 3-8)**: 依赖 Foundational 完成
+  - 可按优先级顺序执行 (P1 → P2 → P3 → P4 → P5 → P6)
+  - 或多人并行开发不同故事
+- **Polish (Phase 9)**: 依赖所有期望的用户故事完成
 
 ### User Story Dependencies
 
-| Story | Depends On | Can Start After |
-|-------|------------|-----------------|
-| US1 (P1) | Phase 2 | Foundational complete |
-| US2 (P2) | US1 | T043 (US1 complete) |
-| US3 (P3) | US2 | T055 (US2 complete) |
-| US4 (P4) | US3 | T075 (US3 AI service ready) |
-| US5 (P5) | US3 | T072 (US3 chat UI ready) |
-| US6 (P6) | US1 | T043 (US1 renderer ready) |
+| 用户故事 | 依赖 | 说明 |
+|---------|------|------|
+| US1 透明窗口3D宠物 | Foundational | 无其他故事依赖，可作为 MVP |
+| US2 基础交互 | US1 | 需要宠物显示和动画系统 |
+| US3 AI智能对话 | US1 | 需要宠物和动画桥接 |
+| US4 工作助手 | US3 | 需要AI对话基础 |
+| US5 语音交互 | US3 | 需要AI对话基础 |
+| US6 照片换肤 | US1 | 需要宠物渲染系统 |
+
+### Within Each User Story
+
+1. Tests 先写并确保 FAIL
+2. 数据模型先于服务
+3. 服务先于API处理器
+4. 核心实现先于集成
+5. 故事完成后再进入下一优先级
 
 ### Parallel Opportunities
 
-**Phase 2 (Foundational)**:
 ```
-T016 credential-store ─┬─ 并行
-T024 logger           ─┤
-T025 sentry           ─┤
-T026-T030 types       ─┘
+Phase 1 (Setup):
+  T003, T004, T005, T007, T008 可并行
+
+Phase 2 (Foundational):
+  T011, T012-T015, T020, T021, T023 可并行
+
+Phase 3 (US1):
+  T024-T026 测试可并行
+  T033, T034 数据模型可并行
+  T036, T037 资源文件可并行
+
+Phase 4 (US2):
+  T038, T039 测试可并行
+  T043-T045 动画资源可并行
+
+Phase 5 (US3):
+  T046-T048 测试可并行
+  T049-T051 数据模型可并行
+  T053-T055 AI Providers 可并行
+  T061-T063 动画资源可并行
+
+Phase 6 (US4):
+  T064-T067 测试可并行
+  T074-T078 MCP服务器可并行
+  T080-T085 技能定义可并行
+
+Phase 7 (US5):
+  T089, T090 测试可并行
+
+Phase 8 (US6):
+  T096, T097 测试可并行
 ```
 
-**Phase 5 (US3 AI Providers)**:
-```
-T058 OpenAI provider  ─┬─ 并行
-T059 Claude provider  ─┤
-T060 Ollama provider  ─┘
-```
+---
 
-**Phase 9 (Polish)**:
-```
-T134 general-settings ─┬─ 并行
-T135 ai-settings      ─┤
-T136 appearance       ─┘
+## Parallel Example: User Story 1
+
+```bash
+# 测试任务并行启动:
+Task: T024 - E2E测试：应用启动和窗口显示
+Task: T025 - 单元测试：动画状态机
+Task: T026 - 单元测试：窗口管理器
+
+# 数据模型并行:
+Task: T033 - 创建 Pet 实体数据访问层
+Task: T034 - 创建 PetSkin 实体数据访问层
+
+# 资源文件并行:
+Task: T036 - 准备默认宠物3D模型
+Task: T037 - 准备 idle 待机动画
 ```
 
 ---
 
 ## Implementation Strategy
 
-### MVP First (User Story 1 Only)
+### MVP First (仅 User Story 1)
 
-1. Complete Phase 1: Setup (T001-T013)
-2. Complete Phase 2: Foundational (T014-T030)
-3. Complete Phase 3: User Story 1 (T031-T043)
-4. **STOP and VALIDATE**: 启动应用，验证3D宠物显示
-5. Demo/发布 MVP 版本
+1. 完成 Phase 1: Setup
+2. 完成 Phase 2: Foundational (**关键 - 阻塞所有故事**)
+3. 完成 Phase 3: User Story 1
+4. **停止并验证**: 独立测试 User Story 1
+5. 如就绪可部署/演示
 
-### Incremental Delivery
+### Incremental Delivery（增量交付）
 
-| Milestone | Stories Included | Key Features |
-|-----------|------------------|--------------|
-| MVP | US1 | 3D宠物显示，待机动画 |
-| Alpha | US1 + US2 | 点击/拖拽交互 |
-| Beta | US1-US4 | AI对话，工作助手 |
-| RC | US1-US5 | 语音交互 |
-| 1.0 | US1-US6 | 完整功能，照片换肤 |
+1. Setup + Foundational → 基础就绪
+2. 添加 US1 → 独立测试 → 部署/演示 (MVP!)
+3. 添加 US2 → 独立测试 → 部署/演示
+4. 添加 US3 → 独立测试 → 部署/演示
+5. 添加 US4 → 独立测试 → 部署/演示
+6. 添加 US5 → 独立测试 → 部署/演示
+7. 添加 US6 → 独立测试 → 部署/演示
+8. 每个故事增加价值而不破坏之前的功能
+
+### Parallel Team Strategy（并行团队策略）
+
+多开发者情况:
+1. 团队共同完成 Setup + Foundational
+2. Foundational 完成后:
+   - 开发者 A: User Story 1 (P1)
+   - 开发者 B: User Story 3 (P3)（需等 US1 动画系统）
+   - 开发者 C: User Story 4 (P4)（需等 US3 AI基础）
+3. 故事独立完成并集成
 
 ---
 
 ## Summary
 
-| Phase | Task Range | Count | Focus |
-|-------|------------|-------|-------|
-| 1. Setup | T001-T013 | 13 | 项目初始化 |
-| 2. Foundational | T014-T030 | 17 | 基础设施 |
-| 3. US1 (P1) | T031-T043 | 13 | 3D显示 |
-| 4. US2 (P2) | T044-T055 | 12 | 交互 |
-| 5. US3 (P3) | T056-T075 | 20 | AI对话 |
-| 6. US4 (P4) | T076-T096 | 21 | 工作助手 |
-| 7. US5 (P5) | T097-T109 | 13 | 语音交互 |
-| 8. US6 (P6) | T110-T128 | 19 | 照片换肤 |
-| 9. Polish | T129-T152 | 24 | 优化收尾 |
-| **Total** | T001-T152 | **152** | |
+| 指标 | 数值 |
+|------|------|
+| 总任务数 | 120 |
+| Phase 1 (Setup) | 8 tasks |
+| Phase 2 (Foundational) | 15 tasks |
+| Phase 3 (US1 - MVP) | 14 tasks |
+| Phase 4 (US2) | 8 tasks |
+| Phase 5 (US3) | 18 tasks |
+| Phase 6 (US4) | 25 tasks |
+| Phase 7 (US5) | 7 tasks |
+| Phase 8 (US6) | 7 tasks |
+| Phase 9 (Polish) | 18 tasks |
+| 可并行任务 | 58 tasks (48%) |
+
+### MVP Scope（最小可行产品范围）
+
+仅完成 **Phase 1 + Phase 2 + Phase 3 (User Story 1)** = 37 tasks
+
+用户可以:
+- 启动应用看到透明窗口中的3D宠物
+- 宠物播放待机动画
+- 窗口置顶显示
 
 ---
 
 ## Notes
 
-- [P] tasks = 不同文件，无依赖，可并行
-- [Story] label = 映射到具体用户故事便于追踪
+- [P] 任务 = 不同文件，无依赖，可并行
+- [Story] 标签将任务映射到具体用户故事，便于追溯
 - 每个用户故事应可独立完成和测试
-- 每完成一个任务后提交代码
-- 在任何 Checkpoint 处可暂停验证
+- 实现前确保测试失败
+- 每个任务或逻辑组完成后提交
+- 在任何检查点停止以独立验证故事
 - 避免：模糊任务、同文件冲突、破坏独立性的跨故事依赖

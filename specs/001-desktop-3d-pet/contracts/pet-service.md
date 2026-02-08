@@ -81,8 +81,8 @@ interface PetState {
 // 模型与动画类型
 // ============================================
 
-/** 3D模型信息 */
-interface PetModel {
+/** 3D模型加载信息（注意：与 Pet 实体不同，Pet3DModelInfo 表示模型文件的技术信息） */
+interface Pet3DModelInfo {
   id: string;
   name: string;
   filePath: string;               // GLB文件路径
@@ -177,10 +177,10 @@ interface IPetRenderer {
   /**
    * 加载3D模型
    * @param modelPath - GLB文件路径
-   * @returns Promise<PetModel> - 加载的模型信息
+   * @returns Promise<Pet3DModelInfo> - 加载的模型信息
    * @throws ModelLoadError - 模型文件不存在或格式错误
    */
-  loadModel(modelPath: string): Promise<PetModel>;
+  loadModel(modelPath: string): Promise<Pet3DModelInfo>;
 
   /**
    * 卸载当前模型
@@ -250,10 +250,10 @@ interface IPetRenderer {
 interface IAnimationController {
   /**
    * 初始化动画系统
-   * @param model - 已加载的3D模型
+   * @param model - 已加载的3D模型信息
    * @throws AnimationInitError - 模型没有动画数据
    */
-  initialize(model: PetModel): void;
+  initialize(model: Pet3DModelInfo): void;
 
   /**
    * 销毁动画控制器
@@ -697,12 +697,12 @@ async function initializePet(container: HTMLElement) {
     targetFPS: 30
   });
 
-  // 2. 加载模型
-  const model = await renderer.loadModel('assets/models/default-pet.glb');
+  // 2. 加载模型（返回 Pet3DModelInfo）
+  const modelInfo = await renderer.loadModel('assets/models/default-pet.glb');
 
   // 3. 初始化动画控制器
   const animationController = new AnimationController();
-  animationController.initialize(model);
+  animationController.initialize(modelInfo);
 
   // 4. 初始化交互处理器
   const interactionHandler = new InteractionHandler();

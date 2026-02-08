@@ -1,464 +1,579 @@
 # Research Document: 桌面3D小宠物
 
-**Feature**: 001-desktop-3d-pet  
-**Date**: 2026-02-08  
-**Purpose**: 解决技术实现中的不确定点，记录技术决策和替代方案
+**Branch**: `001-desktop-3d-pet` | **Date**: 2026-02-08  
+**Purpose**: 记录技术研究决策和最佳实践
 
 ## 1. Electron 透明窗口实现
 
-### 决策
-使用 Electron 的透明无边框窗口配置实现桌面宠物悬浮效果。
+### Decision
+使用 Electron 的 `transparent: true` 和 `frame: false` 配置创建透明无边框窗口。
 
-### 技术细节
-```javascript
+### Rationale
+- Electron 28+ 原生支持透明窗口
+- 跨平台兼容性好（Windows/macOS/Linux）
+- 与 Three.js WebGL 渲染完美配合
+
+### Implementation Details
+```typescript
 const mainWindow = new BrowserWindow({
-  width: 400,
-  height: 400,
-  transparent: true,        // 窗口透明
-  frame: false,             // 无边框
-  alwaysOnTop: true,        // 置顶显示
-  skipTaskbar: true,        // 不在任务栏显示
-  hasShadow: false,         // 无阴影（避免透明区域出现阴影）
-  resizable: false,         // 禁止调整大小
+  transparent: true,
+  frame: false,
+  hasShadow: false,
+  alwaysOnTop: true,
+  skipTaskbar: false,
   webPreferences: {
-    contextIsolation: true,
     nodeIntegration: false,
+    contextIsolation: true,
     preload: path.join(__dirname, 'preload.js')
   }
 });
-
-// 设置窗口可点击穿透透明区域
-mainWindow.setIgnoreMouseEvents(false);
 ```
 
-### 平台差异
-| 平台 | 透明窗口支持 | 特殊配置 |
-|------|-------------|----------|
-| Windows 10+ | ✅ 完全支持 | 需要启用 DWM 组合 |
-| macOS 10.15+ | ✅ 完全支持 | 默认支持，无需额外配置 |
-| Ubuntu 20.04+ | ⚠️ 部分支持 | 需要支持透明的窗口管理器 (Mutter/KWin) |
+### Platform-Specific Notes
+- **Windows**: 需要设置 `hasShadow: false` 避免窗口阴影
+- **macOS**: 需要设置 `vibrancy: undefined` 确保完全透明
+- **Linux**: 需要启用 compositing，Wayland 可能有兼容性问题
 
-### 替代方案评估
-| 方案 | 优点 | 缺点 | 决策 |
+### Alternatives Considered
+| 方案 | 优点 | 缺点 | 结论 |
 |------|------|------|------|
-| Electron 透明窗口 | 跨平台、成熟、文档完善 | 内存占用较高 | ✅ 采用 |
-| Tauri | 更轻量、Rust后端 | 透明窗口支持较新、生态较小 | ❌ 放弃 |
-| Qt + QML | 原生性能 | 需要编译、分发复杂 | ❌ 放弃 |
-
-### 已解决问题
-- 透明区域的鼠标事件处理方案已确认
-- 多显示器场景下的窗口定位策略已明确
+| NW.js | 类似Electron | 社区较小，更新慢 | 不采用 |
+| Tauri | 体积小，性能好 | WebGL支持不完善，透明窗口支持有限 | 不采用 |
+| Qt/GTK原生 | 性能最好 | 开发复杂度高，需要C++/Python | 不采用 |
 
 ---
 
-## 2. Three.js 3D渲染集成
+## 2. Three.js 3D渲染最佳实践
 
-### 决策
-使用 Three.js WebGLRenderer 在 Electron 渲染进程中实现3D渲染。
+### Decision
+使用 Three.js 作为3D渲染引擎，采用 GLTF/GLB 格式模型，实现骨骼动画系统。
 
-### 技术细节
-```javascript
-// 创建透明背景的渲染器
-const renderer = new THREE.WebGLRenderer({
-  alpha: true,              // 启用透明背景
-  antialias: true,          // 抗锯齿
-  powerPreference: 'low-power'  // 优先省电模式
-});
-renderer.setClearColor(0x000000, 0);  // 透明背景
-renderer.setPixelRatio(window.devicePixelRatio);
-renderer.setSize(window.innerWidth, window.innerHeight);
+### Rationale
+- Three.js 是最成熟的 Web 3D 库
+- GLTFLoader 支持完整的骨骼动画
+- AnimationMixer 提供动画混合和过渡功能
 
-// 模型加载
-const loader = new GLTFLoader();
-loader.load('models/pet.glb', (gltf) => {
-  const model = gltf.scene;
-  const animations = gltf.animations;
-  
-  // 骨骼动画混合器
-  const mixer = new THREE.AnimationMixer(model);
-  animations.forEach((clip) => {
-    mixer.clipAction(clip);
-  });
-  
-  scene.add(model);
-});
-```
+### Implementation Details
 
-### 性能优化策略
-1. **帧率控制**: 空闲时降低到15fps，交互时提升到30fps
-2. **LOD系统**: 根据窗口大小动态调整模型细节
-3. **渲染按需**: 无动画变化时暂停渲染循环
-4. **资源管理**: 及时释放未使用的纹理和几何体
-
-### 动画状态机设计
-```text
-状态流转:
-  IDLE (待机) 
-    ├── 3秒无操作 → IDLE_ANIMATION (待机动画循环)
-    ├── 用户点击 → REACT (反应动画)
-    ├── 用户拖拽 → DRAG (拖拽状态)
-    └── 开始对话 → THINKING (思考状态)
-  
-  REACT → 2秒后 → IDLE
-  THINKING → AI回复 → RESPONDING → 回复结束 → IDLE
-```
-
----
-
-## 3. SQLite 本地数据存储
-
-### 决策
-使用 better-sqlite3 作为 SQLite 驱动，同步 API 更适合 Electron 主进程。
-
-### 技术细节
-```javascript
-import Database from 'better-sqlite3';
-import { app } from 'electron';
-import path from 'path';
-
-const dbPath = path.join(app.getPath('userData'), 'desktop-pet.db');
-const db = new Database(dbPath);
-
-// 初始化表结构
-db.exec(`
-  CREATE TABLE IF NOT EXISTS conversations (
-    id TEXT PRIMARY KEY,
-    created_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL,
-    title TEXT
-  );
-  
-  CREATE TABLE IF NOT EXISTS messages (
-    id TEXT PRIMARY KEY,
-    conversation_id TEXT NOT NULL,
-    role TEXT NOT NULL,
-    content TEXT NOT NULL,
-    created_at INTEGER NOT NULL,
-    FOREIGN KEY (conversation_id) REFERENCES conversations(id)
-  );
-  
-  CREATE TABLE IF NOT EXISTS reminders (
-    id TEXT PRIMARY KEY,
-    title TEXT NOT NULL,
-    trigger_time INTEGER NOT NULL,
-    repeat_rule TEXT,
-    completed INTEGER DEFAULT 0,
-    created_at INTEGER NOT NULL
-  );
-  
-  CREATE TABLE IF NOT EXISTS settings (
-    key TEXT PRIMARY KEY,
-    value TEXT NOT NULL
-  );
-`);
-```
-
-### 替代方案评估
-| 方案 | 优点 | 缺点 | 决策 |
-|------|------|------|------|
-| better-sqlite3 | 同步API、性能好、无依赖 | 需要原生编译 | ✅ 采用 |
-| sql.js | 纯JS、无需编译 | 内存占用高、性能较差 | ❌ 放弃 |
-| LowDB | 简单、JSON存储 | 不适合大量数据 | ❌ 放弃 |
-| IndexedDB | 浏览器原生 | 异步API、调试困难 | ❌ 放弃 |
-
----
-
-## 4. API密钥安全存储
-
-### 决策
-使用 keytar 库访问系统凭证管理器，确保API密钥安全存储。
-
-### 技术细节
-```javascript
-import keytar from 'keytar';
-
-const SERVICE_NAME = 'DesktopPet';
-
-// 存储API密钥
-async function saveApiKey(provider: string, apiKey: string): Promise<void> {
-  await keytar.setPassword(SERVICE_NAME, provider, apiKey);
-}
-
-// 获取API密钥
-async function getApiKey(provider: string): Promise<string | null> {
-  return await keytar.getPassword(SERVICE_NAME, provider);
-}
-
-// 删除API密钥
-async function deleteApiKey(provider: string): Promise<boolean> {
-  return await keytar.deletePassword(SERVICE_NAME, provider);
-}
-```
-
-### 平台实现
-| 平台 | 底层存储 | 加密方式 |
-|------|----------|----------|
-| Windows | Credential Manager | DPAPI |
-| macOS | Keychain | 256-bit AES |
-| Linux | libsecret/gnome-keyring | 系统级加密 |
-
----
-
-## 5. AI服务集成与降级策略
-
-### 决策
-实现统一的AI服务接口，支持多提供商和自动降级。
-
-### 架构设计
+#### 渲染器配置
 ```typescript
-interface AIProvider {
+const renderer = new THREE.WebGLRenderer({
+  alpha: true,           // 透明背景
+  antialias: true,       // 抗锯齿
+  preserveDrawingBuffer: false
+});
+renderer.setClearColor(0x000000, 0);  // 完全透明
+renderer.setPixelRatio(window.devicePixelRatio);
+```
+
+#### 动画状态机
+```typescript
+interface AnimationState {
   name: string;
-  isAvailable(): Promise<boolean>;
-  chat(messages: Message[], options?: ChatOptions): AsyncGenerator<string>;
-  supportsFunctionCalling(): boolean;
+  clip: THREE.AnimationClip;
+  loop: THREE.LoopOnce | THREE.LoopRepeat;
+  transitionDuration: number;
 }
 
-class AIService {
-  private providers: AIProvider[] = [];
+const states: AnimationState[] = [
+  { name: 'idle', clip: idleClip, loop: THREE.LoopRepeat, transitionDuration: 0.3 },
+  { name: 'thinking', clip: thinkingClip, loop: THREE.LoopRepeat, transitionDuration: 0.2 },
+  // ... 10种状态
+];
+```
+
+#### 性能优化
+- 使用 `requestAnimationFrame` 渲染循环
+- 实现 LOD（Level of Detail）系统
+- 窗口最小化时暂停渲染
+- 使用 `InstancedMesh` 优化粒子效果
+
+### Alternatives Considered
+| 方案 | 优点 | 缺点 | 结论 |
+|------|------|------|------|
+| Babylon.js | 功能强大，内置物理 | 体积较大，学习曲线陡 | 不采用 |
+| PlayCanvas | 游戏引擎级功能 | 主要面向游戏开发 | 不采用 |
+| A-Frame | VR友好 | 对桌面应用不适合 | 不采用 |
+
+---
+
+## 3. SQLite 数据存储
+
+### Decision
+使用 `better-sqlite3` 作为 SQLite 绑定库，同步API简化代码。
+
+### Rationale
+- `better-sqlite3` 性能优于 `node-sqlite3`
+- 同步API在 Electron 主进程中更易使用
+- 支持 WAL 模式提高并发性能
+
+### Implementation Details
+
+#### 数据库初始化
+```typescript
+import Database from 'better-sqlite3';
+
+const db = new Database(path.join(app.getPath('userData'), 'pet.db'));
+db.pragma('journal_mode = WAL');
+db.pragma('foreign_keys = ON');
+```
+
+#### 表结构设计
+```sql
+-- 对话表
+CREATE TABLE conversations (
+  id TEXT PRIMARY KEY,
+  title TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+-- 消息表
+CREATE TABLE messages (
+  id TEXT PRIMARY KEY,
+  conversation_id TEXT NOT NULL,
+  role TEXT NOT NULL CHECK(role IN ('user', 'assistant', 'system')),
+  content TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (conversation_id) REFERENCES conversations(id)
+);
+
+-- 提醒表
+CREATE TABLE reminders (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  trigger_time INTEGER NOT NULL,
+  repeat_rule TEXT,
+  completed INTEGER DEFAULT 0,
+  created_at INTEGER NOT NULL
+);
+
+-- 用户设置表
+CREATE TABLE settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+```
+
+### Migration Strategy
+- 使用版本号追踪数据库 schema
+- 启动时检查并执行必要的迁移
+- 备份旧数据库文件后再迁移
+
+### Alternatives Considered
+| 方案 | 优点 | 缺点 | 结论 |
+|------|------|------|------|
+| electron-store | 简单键值存储 | 不支持复杂查询 | 不适合 |
+| LowDB | JSON文件存储 | 性能差，不支持大数据量 | 不适合 |
+| IndexedDB | 浏览器原生 | 异步API复杂 | 不适合 |
+
+---
+
+## 4. AI 服务集成
+
+### Decision
+实现多 LLM 提供商支持（OpenAI、Claude、Ollama），统一接口抽象。
+
+### Rationale
+- 用户可选择不同的AI服务
+- 支持本地部署（Ollama）保护隐私
+- 云端服务不可用时自动降级
+
+### Implementation Details
+
+#### Provider 接口
+```typescript
+interface ILLMProvider {
+  readonly name: string;
+  readonly isLocal: boolean;
+  
+  chat(messages: Message[], options?: ChatOptions): AsyncGenerator<string>;
+  complete(prompt: string, options?: CompleteOptions): Promise<string>;
+  healthCheck(): Promise<boolean>;
+}
+```
+
+#### 降级策略
+```typescript
+class AIServiceManager {
+  private providers: ILLMProvider[] = [];
   private cache: ResponseCache;
   
   async chat(messages: Message[]): AsyncGenerator<string> {
-    // 尝试顺序: OpenAI → Claude → Ollama → Cache
-    for (const provider of this.providers) {
-      if (await provider.isAvailable()) {
-        try {
-          yield* provider.chat(messages);
-          return;
-        } catch (error) {
-          console.warn(`Provider ${provider.name} failed, trying next...`);
-        }
-      }
-    }
-    // 所有提供商失败，尝试缓存
+    // 1. 检查缓存
     const cached = this.cache.get(messages);
     if (cached) {
-      yield cached;
-    } else {
-      throw new Error('All AI providers unavailable');
+      yield* this.streamCached(cached);
+      return;
     }
+    
+    // 2. 尝试主要提供商
+    for (const provider of this.providers) {
+      try {
+        if (await provider.healthCheck()) {
+          const response = [];
+          for await (const chunk of provider.chat(messages)) {
+            response.push(chunk);
+            yield chunk;
+          }
+          this.cache.set(messages, response.join(''));
+          return;
+        }
+      } catch (error) {
+        console.error(`Provider ${provider.name} failed:`, error);
+      }
+    }
+    
+    throw new Error('All AI providers unavailable');
   }
 }
 ```
 
-### 提供商配置
-| 提供商 | 模型 | 用途 | 优先级 |
-|--------|------|------|--------|
-| OpenAI | gpt-4-turbo | 主要对话、Function Calling | 1 |
-| Claude | claude-3-sonnet | 备选对话 | 2 |
-| Ollama | llama3/mistral | 本地离线 | 3 |
+#### 流式输出
+- 使用 `AsyncGenerator` 实现流式响应
+- 前端通过事件总线接收 `ai:response:chunk` 事件
+- 支持取消正在进行的请求
 
-### Function Calling 工具定义
+### Alternatives Considered
+| 方案 | 优点 | 缺点 | 结论 |
+|------|------|------|------|
+| 仅OpenAI | 简单 | 单点故障，无离线支持 | 不采用 |
+| LangChain | 功能丰富 | 过度复杂，依赖过多 | 不采用 |
+| 自研抽象层 | 完全控制 | 开发成本高 | 采用简化版 |
+
+---
+
+## 5. MCP 服务器实现
+
+### Decision
+使用 `@modelcontextprotocol/sdk` 实现 MCP 服务器，采用 stdio 传输方式。
+
+### Rationale
+- MCP 是标准化的工具集成协议
+- stdio 传输简单可靠，易于调试
+- 支持工具和资源的动态发现
+
+### Implementation Details
+
+#### MCP 服务器结构
 ```typescript
-const tools = [
-  {
-    name: 'set_reminder',
-    description: '设置一个提醒',
-    parameters: {
-      type: 'object',
-      properties: {
-        title: { type: 'string', description: '提醒标题' },
-        time: { type: 'string', description: '触发时间，ISO 8601格式' },
-        repeat: { type: 'string', enum: ['once', 'daily', 'weekly'] }
-      },
-      required: ['title', 'time']
+import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+
+const server = new Server({
+  name: 'reminder-server',
+  version: '1.0.0'
+}, {
+  capabilities: {
+    tools: {}
+  }
+});
+
+server.setRequestHandler(ListToolsRequestSchema, async () => ({
+  tools: [
+    {
+      name: 'create_reminder',
+      description: '创建定时提醒',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          title: { type: 'string', description: '提醒标题' },
+          time: { type: 'string', description: '触发时间 (ISO 8601)' }
+        },
+        required: ['title', 'time']
+      }
     }
-  },
-  {
-    name: 'get_weather',
-    description: '查询天气',
-    parameters: {
-      type: 'object',
-      properties: {
-        city: { type: 'string', description: '城市名称' }
-      },
-      required: ['city']
-    }
-  },
-  {
-    name: 'open_application',
-    description: '打开应用程序',
-    parameters: {
-      type: 'object',
-      properties: {
-        app_name: { type: 'string', description: '应用名称' }
-      },
-      required: ['app_name']
+  ]
+}));
+
+server.setRequestHandler(CallToolRequestSchema, async (request) => {
+  if (request.params.name === 'create_reminder') {
+    const { title, time } = request.params.arguments;
+    // 创建提醒逻辑
+    return { content: [{ type: 'text', text: `已创建提醒: ${title}` }] };
+  }
+});
+```
+
+#### 服务器配置
+```json
+{
+  "mcpServers": {
+    "system-tools": {
+      "command": "node",
+      "args": ["mcp-servers/system-tools/index.js"],
+      "env": {}
+    },
+    "reminder": {
+      "command": "node", 
+      "args": ["mcp-servers/reminder/index.js"],
+      "env": {}
     }
   }
-];
+}
 ```
 
 ---
 
 ## 6. 语音识别与合成
 
-### 决策
-优先使用 Web Speech API，本地备选方案使用 whisper.cpp 和系统TTS。
+### Decision
+使用 Web Speech API 作为默认方案，支持可选的云端服务（Azure Speech / Whisper）。
 
-### 语音识别 (STT)
+### Rationale
+- Web Speech API 免费且内置于浏览器
+- 无需额外依赖，开箱即用
+- 云端服务作为可选增强
+
+### Implementation Details
+
+#### 语音识别
 ```typescript
-// Web Speech API (Electron/Chromium 内置)
-const recognition = new webkitSpeechRecognition();
-recognition.continuous = false;
-recognition.interimResults = true;
-recognition.lang = 'zh-CN';
-
-recognition.onresult = (event) => {
-  const transcript = event.results[0][0].transcript;
-  const isFinal = event.results[0].isFinal;
-  // 处理识别结果
-};
-
-// 本地备选: whisper.cpp (通过 node-addon 或子进程)
-// 适用于离线场景或需要更高准确率的场景
+class SpeechRecognition {
+  private recognition: globalThis.SpeechRecognition;
+  
+  constructor() {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    this.recognition = new SpeechRecognition();
+    this.recognition.continuous = false;
+    this.recognition.interimResults = true;
+    this.recognition.lang = 'zh-CN';
+  }
+  
+  start(): Promise<string> {
+    return new Promise((resolve, reject) => {
+      this.recognition.onresult = (event) => {
+        const transcript = event.results[0][0].transcript;
+        resolve(transcript);
+      };
+      this.recognition.onerror = reject;
+      this.recognition.start();
+    });
+  }
+}
 ```
 
-### 语音合成 (TTS)
+#### 语音合成
 ```typescript
-// 跨平台TTS方案
-import say from 'say';
+class SpeechSynthesis {
+  speak(text: string, options?: SpeakOptions): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = 'zh-CN';
+      utterance.rate = options?.rate ?? 1.0;
+      utterance.pitch = options?.pitch ?? 1.0;
+      utterance.onend = () => resolve();
+      utterance.onerror = reject;
+      window.speechSynthesis.speak(utterance);
+    });
+  }
+}
+```
 
-function speak(text: string): Promise<void> {
+### Limitations
+- Web Speech API 在某些 Linux 发行版上可能不可用
+- 语音识别准确率依赖浏览器实现
+- 需要网络连接（大多数浏览器实现）
+
+---
+
+## 7. 照片换肤：3D模型生成
+
+### Decision
+使用 TripoSR（本地）+ Meshy API（云端）混合方案生成3D模型。
+
+### Rationale
+- TripoSR 支持本地运行，保护用户隐私
+- Meshy API 作为备选，无需本地GPU
+- 两者输出 GLTF 格式，兼容 Three.js
+
+### Implementation Details
+
+#### TripoSR 本地调用
+```typescript
+import { spawn } from 'child_process';
+
+async function generateModel(imagePath: string): Promise<string> {
   return new Promise((resolve, reject) => {
-    say.speak(text, undefined, 1.0, (err) => {
-      if (err) reject(err);
-      else resolve();
+    const process = spawn('python', [
+      '-m', 'tsr',
+      '--image', imagePath,
+      '--output', outputPath,
+      '--format', 'glb'
+    ]);
+    
+    process.on('close', (code) => {
+      if (code === 0) {
+        resolve(outputPath);
+      } else {
+        reject(new Error(`TripoSR exited with code ${code}`));
+      }
     });
   });
 }
-
-// 或使用 Web Speech API (更简单但声音较机械)
-const utterance = new SpeechSynthesisUtterance(text);
-utterance.lang = 'zh-CN';
-speechSynthesis.speak(utterance);
 ```
+
+#### 自动骨骼绑定
+- 使用预定义的骨骼模板
+- 顶点权重映射算法
+- 支持基础动画（idle, walk）
+
+### Requirements
+- **TripoSR**: Python 3.9+, CUDA 11.8+, 8GB+ VRAM
+- **Meshy API**: 付费API，无本地要求
 
 ---
 
-## 7. 换肤功能技术方案
+## 8. 系统凭证存储
 
-### 决策
-品种识别使用 TensorFlow.js + MobileNet，3D生成使用本地 TripoSR 或云端 Meshy API。
+### Decision
+使用 `keytar` 库访问操作系统凭证管理器。
 
-### 品种识别流程
-```text
-用户上传照片 
-  → 图片预处理 (裁剪、归一化)
-  → TensorFlow.js MobileNet 特征提取
-  → 品种分类器 (预训练模型)
-  → 返回品种名称和置信度
-```
+### Rationale
+- 跨平台支持 Windows/macOS/Linux
+- API密钥不存储在文件中
+- 符合安全最佳实践
 
-### 3D模型生成
-| 方案 | 优点 | 缺点 | 适用场景 |
-|------|------|------|----------|
-| TripoSR (本地) | 免费、离线可用 | 需要GPU、生成较慢 | 有独显用户 |
-| Meshy API (云端) | 质量高、快速 | 收费、需要网络 | 无GPU用户 |
-
-### 骨骼绑定方案
-1. **预制骨骼模板**: 为常见宠物类型（猫、狗）准备骨骼模板
-2. **自动绑定**: 使用 Mixamo 或自定义算法将生成的模型绑定到骨骼
-3. **动画复用**: 绑定后的模型可复用预制动画
-
----
-
-## 8. 日志与错误追踪
-
-### 决策
-使用 electron-log 进行本地日志，Sentry 进行崩溃报告（用户可选）。
-
-### 日志配置
+### Implementation Details
 ```typescript
-import log from 'electron-log';
+import * as keytar from 'keytar';
 
-// 配置日志级别
-log.transports.file.level = 'info';
-log.transports.console.level = 'debug';
+const SERVICE_NAME = 'desktop-pet';
 
-// 日志轮转
-log.transports.file.maxSize = 10 * 1024 * 1024; // 10MB
+async function setApiKey(provider: string, key: string): Promise<void> {
+  await keytar.setPassword(SERVICE_NAME, provider, key);
+}
 
-// 日志路径: userData/logs/
-log.transports.file.resolvePathFn = () => {
-  return path.join(app.getPath('userData'), 'logs', 'main.log');
-};
+async function getApiKey(provider: string): Promise<string | null> {
+  return keytar.getPassword(SERVICE_NAME, provider);
+}
 
-// 过滤敏感信息
-log.hooks.push((message, transport) => {
-  // 移除可能包含的API密钥或对话内容
-  return filterSensitiveData(message);
-});
-```
-
-### Sentry 集成
-```typescript
-import * as Sentry from '@sentry/electron';
-
-// 仅在用户同意后初始化
-if (userSettings.enableCrashReporting) {
-  Sentry.init({
-    dsn: 'YOUR_SENTRY_DSN',
-    beforeSend(event) {
-      // 过滤敏感信息
-      delete event.user;
-      return event;
-    }
-  });
+async function deleteApiKey(provider: string): Promise<boolean> {
+  return keytar.deletePassword(SERVICE_NAME, provider);
 }
 ```
 
+### Platform Support
+| 平台 | 后端 |
+|------|------|
+| Windows | Credential Manager |
+| macOS | Keychain |
+| Linux | libsecret (GNOME Keyring) |
+
 ---
 
-## 9. 打包与分发
+## 9. 事件总线实现
 
-### 决策
-使用 electron-builder 进行多平台打包，支持自动更新。
+### Decision
+自研轻量级事件总线，支持类型安全和优先级。
 
-### 打包配置
-```json
-{
-  "appId": "com.example.desktop-pet",
-  "productName": "桌面小宠物",
-  "directories": {
-    "buildResources": "build",
-    "output": "dist"
-  },
-  "files": [
-    "out/**/*",
-    "assets/**/*"
-  ],
-  "win": {
-    "target": ["nsis"],
-    "icon": "assets/icons/icon.ico"
-  },
-  "mac": {
-    "target": ["dmg"],
-    "icon": "assets/icons/icon.icns",
-    "category": "public.app-category.utilities"
-  },
-  "linux": {
-    "target": ["AppImage", "deb"],
-    "icon": "assets/icons/icon.png",
-    "category": "Utility"
-  },
-  "publish": {
-    "provider": "github",
-    "releaseType": "release"
+### Rationale
+- 现有库（mitt, EventEmitter3）不支持优先级
+- 需要与TypeScript深度集成
+- 控制代码体积
+
+### Implementation Details
+```typescript
+type EventHandler<T = unknown> = (data: T) => void | Promise<void>;
+
+interface EventSubscription {
+  handler: EventHandler;
+  priority: number;
+  once: boolean;
+}
+
+class EventBus {
+  private handlers = new Map<string, EventSubscription[]>();
+  
+  on<T>(event: string, handler: EventHandler<T>, priority = 0): () => void {
+    const subscriptions = this.handlers.get(event) ?? [];
+    const subscription: EventSubscription = { handler: handler as EventHandler, priority, once: false };
+    subscriptions.push(subscription);
+    subscriptions.sort((a, b) => b.priority - a.priority);
+    this.handlers.set(event, subscriptions);
+    
+    return () => this.off(event, handler);
+  }
+  
+  async emit<T>(event: string, data: T): Promise<void> {
+    const subscriptions = this.handlers.get(event) ?? [];
+    for (const { handler, once } of subscriptions) {
+      await handler(data);
+      if (once) {
+        this.off(event, handler);
+      }
+    }
+  }
+  
+  off(event: string, handler: EventHandler): void {
+    const subscriptions = this.handlers.get(event) ?? [];
+    this.handlers.set(event, subscriptions.filter(s => s.handler !== handler));
   }
 }
 ```
 
 ---
 
-## 待解决问题
+## 10. 构建与打包
 
-所有技术不确定点已在本文档中解决，可进入 Phase 1 设计阶段。
+### Decision
+使用 electron-builder 进行应用打包和分发。
 
-## 参考资料
+### Rationale
+- 支持所有目标平台
+- 内置自动更新支持
+- 配置灵活，社区活跃
 
-- [Electron 透明窗口文档](https://www.electronjs.org/docs/latest/tutorial/window-customization)
-- [Three.js 文档](https://threejs.org/docs/)
-- [better-sqlite3 文档](https://github.com/WiseLibs/better-sqlite3)
-- [keytar 文档](https://github.com/atom/node-keytar)
-- [OpenAI API 文档](https://platform.openai.com/docs)
-- [Sentry Electron 文档](https://docs.sentry.io/platforms/javascript/guides/electron/)
+### Configuration
+```json
+{
+  "build": {
+    "appId": "com.desktop-pet.app",
+    "productName": "桌面小宠物",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "build/**/*",
+      "assets/**/*",
+      "node_modules/**/*"
+    ],
+    "win": {
+      "target": ["nsis", "portable"],
+      "icon": "assets/icons/app-icon.ico"
+    },
+    "mac": {
+      "target": ["dmg", "zip"],
+      "icon": "assets/icons/app-icon.icns",
+      "category": "public.app-category.entertainment"
+    },
+    "linux": {
+      "target": ["AppImage", "deb"],
+      "icon": "assets/icons",
+      "category": "Utility"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "your-org",
+      "repo": "desktop-pet"
+    }
+  }
+}
+```
+
+---
+
+## Summary
+
+| 技术领域 | 决策 | 理由 |
+|----------|------|------|
+| 桌面框架 | Electron 28+ | 最成熟的跨平台方案，原生支持透明窗口 |
+| 3D渲染 | Three.js | Web 3D 标准，骨骼动画支持完善 |
+| 数据存储 | better-sqlite3 | 高性能本地存储，同步API |
+| AI服务 | 多Provider抽象 | 灵活切换，支持本地/云端 |
+| 工具集成 | MCP协议 | 标准化协议，可扩展 |
+| 语音交互 | Web Speech API | 免费内置，开箱即用 |
+| 3D生成 | TripoSR + Meshy | 本地优先，云端备选 |
+| 凭证存储 | keytar | 系统级安全存储 |
+| 事件通信 | 自研EventBus | 类型安全，支持优先级 |
+| 打包分发 | electron-builder | 全平台支持，自动更新 |
