@@ -452,9 +452,10 @@ export class PetDrag implements IPetDrag {
       }
     } else {
       // 使用 Electron IPC (通过 preload 暴露)
+      // 注意：preload 暴露的方法是 move() 而不是 setPosition()
       if (typeof window !== 'undefined' && (window as any).electronAPI) {
         try {
-          await (window as any).electronAPI.window.setPosition(
+          await (window as any).electronAPI.window.move(
             Math.round(x),
             Math.round(y)
           );
@@ -604,10 +605,19 @@ export class PetDrag implements IPetDrag {
     }
 
     // 使用 Electron IPC (通过 preload 暴露)
+    // 注意：windowAPI 没有 getScreenSize 方法，需要通过 getDisplays 获取
     if (typeof window !== 'undefined' && (window as any).electronAPI) {
       try {
-        this._screenSize = await (window as any).electronAPI.window.getScreenSize();
-        return;
+        const displays = await (window as any).electronAPI.window.getDisplays();
+        // 使用主显示器的尺寸，如果没有主显示器则使用第一个
+        const primaryDisplay = displays?.find((d: any) => d.isPrimary) || displays?.[0];
+        if (primaryDisplay?.bounds) {
+          this._screenSize = {
+            width: primaryDisplay.bounds.width,
+            height: primaryDisplay.bounds.height,
+          };
+          return;
+        }
       } catch (error) {
         console.warn('[PetDrag] Failed to get screen size via IPC:', error);
       }
@@ -641,10 +651,18 @@ export class PetDrag implements IPetDrag {
     }
 
     // 使用 Electron IPC (通过 preload 暴露)
+    // 注意：savePosition 在 petAPI 中，不在 windowAPI 中
     if (typeof window !== 'undefined' && (window as any).electronAPI) {
       try {
-        await (window as any).electronAPI.window.savePosition(position);
-        console.log('[PetDrag] Position saved via IPC:', position);
+        // 获取当前显示器 ID
+        const currentPos = await (window as any).electronAPI.window.getPosition();
+        const petPosition = {
+          x: position.x,
+          y: position.y,
+          monitor: currentPos?.monitor ?? 0,
+        };
+        await (window as any).electronAPI.pet.savePosition(petPosition);
+        console.log('[PetDrag] Position saved via IPC:', petPosition);
       } catch (error) {
         console.warn('[PetDrag] Failed to save position via IPC:', error);
       }

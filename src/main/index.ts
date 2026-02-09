@@ -10,7 +10,7 @@
  * - 创建窗口
  */
 
-import { app, BrowserWindow, dialog, protocol } from 'electron';
+import { app, BrowserWindow, dialog } from 'electron';
 import * as path from 'path';
 
 // 数据库和服务
@@ -168,7 +168,8 @@ function initializeEventBus(): void {
 function initializeCapabilityRegistry(): void {
   logger.info('Initializing capability registry...');
   
-  const registry = getGlobalCapabilityRegistry();
+  // 初始化全局能力注册表
+  getGlobalCapabilityRegistry();
   
   // 在此注册基础能力
   // TODO: 在 AI 服务初始化时注册 AI 能力
@@ -230,8 +231,8 @@ async function createMainWindow(): Promise<void> {
   
   // 窗口配置 - 透明无边框窗口
   mainWindow = new BrowserWindow({
-    width: 300,
-    height: 400,
+    width: 150,
+    height: 200,
     x: 100,
     y: 100,
     transparent: true,        // 透明背景
@@ -445,7 +446,7 @@ function onBeforeQuit(): void {
 /**
  * 应用即将退出
  */
-function onWillQuit(event: Electron.Event): void {
+function onWillQuit(_event: Electron.Event): void {
   logger.info('Application will quit');
   
   // 清理资源
@@ -481,9 +482,9 @@ function onWillQuit(event: Electron.Event): void {
  * 第二个实例启动
  */
 function onSecondInstance(
-  event: Electron.Event,
+  _event: Electron.Event,
   commandLine: string[],
-  workingDirectory: string
+  _workingDirectory: string
 ): void {
   logger.info('Second instance launched, focusing main window');
   
@@ -541,10 +542,10 @@ if (!gotTheLock) {
   app.on('second-instance', onSecondInstance);
   
   // 在应用准备就绪前执行初始化
-  beforeReady()
+  void beforeReady()
     .then(() => {
       // 等待应用准备就绪
-      app.whenReady().then(onAppReady);
+      void app.whenReady().then(onAppReady);
     })
     .catch((error) => {
       logger.error('Pre-ready initialization failed:', error);

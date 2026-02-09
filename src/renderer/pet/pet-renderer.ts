@@ -397,6 +397,8 @@ export class PetRenderer implements IPetRenderer {
 
   /**
    * 加载宠物模型
+   * 注意：此方法在加载失败时只抛出异常，不调用 onError 回调
+   * 调用者应该捕获异常并决定如何处理（例如使用 fallback）
    */
   async loadModel(options: ModelLoadOptions): Promise<void> {
     if (!this.initialized) {
@@ -474,8 +476,9 @@ export class PetRenderer implements IPetRenderer {
 
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
-      console.error('[PetRenderer] Failed to load model:', err);
-      this.events.onError?.(err);
+      // 只记录日志和抛出异常，不调用 onError 回调
+      // 这允许调用者决定如何处理错误（如使用 fallback 模型）
+      console.log('[PetRenderer] Model load failed:', options.modelPath, '-', err.message);
       throw err;
     }
   }

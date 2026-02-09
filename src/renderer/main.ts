@@ -236,24 +236,42 @@ async function loadPetModel(): Promise<void> {
   // 如果模型加载成功，会重置此标志
   usePlaceholderPet = true;
   
+  // 定义模型路径候选列表
+  const modelPaths = [
+    './assets/models/pet-default.glb',
+    './assets/models/default-pet.glb',
+    './assets/models/pet.glb',
+  ];
+  
   // 尝试加载模型，如果失败则创建占位对象
-  try {
-    // 尝试加载默认模型
-    const modelPath = './assets/models/pet-default.glb';
-    await petRenderer.loadModel({
-      modelPath,
-      scale: 1.0,
-      positionOffset: { x: 0, y: -0.5, z: 0 },
-    });
-    // 模型加载成功，重置标志
-    usePlaceholderPet = false;
-    console.log('[Renderer] Pet model loaded successfully');
-  } catch (modelError) {
-    console.warn('[Renderer] Failed to load model, creating placeholder:', modelError);
+  let modelLoaded = false;
+  
+  for (const modelPath of modelPaths) {
+    try {
+      console.log(`[Renderer] Trying to load model: ${modelPath}`);
+      await petRenderer.loadModel({
+        modelPath,
+        scale: 1.0,
+        positionOffset: { x: 0, y: -0.5, z: 0 },
+      });
+      // 模型加载成功
+      modelLoaded = true;
+      usePlaceholderPet = false;
+      console.log(`[Renderer] Pet model loaded successfully from: ${modelPath}`);
+      break;
+    } catch {
+      // 此模型路径加载失败，继续尝试下一个
+      console.log(`[Renderer] Model not found at: ${modelPath}`);
+    }
+  }
+  
+  // 如果所有模型都加载失败，创建占位宠物
+  if (!modelLoaded) {
+    console.log('[Renderer] No model files found, creating placeholder pet...');
+    console.log('[Renderer] 提示：如需使用自定义3D模型，请将 .glb 文件放置到 assets/models/ 目录');
     // usePlaceholderPet 已经是 true，保持不变
-    // 模型加载失败，创建占位3D对象
     await createPlaceholderPet();
-    console.log('[Renderer] Placeholder pet created successfully');
+    console.log('[Renderer] Placeholder pet created and displayed successfully');
   }
 }
 
@@ -418,12 +436,18 @@ async function createPlaceholderPet(): Promise<void> {
 function startRenderLoop(): void {
   console.log('[Renderer] Starting render loop...');
   
+  // 如果使用占位宠物，渲染循环已在 createPlaceholderPet 中启动
+  if (usePlaceholderPet) {
+    console.log('[Renderer] Render loop started (placeholder mode - animation already running)');
+    return;
+  }
+  
+  // 使用 PetRenderer 的渲染循环
   if (petRenderer && petRenderer.isInitialized()) {
     petRenderer.resume();
     console.log('[Renderer] Render loop started via PetRenderer');
   } else {
-    // 如果使用占位宠物，渲染循环已在 createPlaceholderPet 中启动
-    console.log('[Renderer] Render loop started (placeholder mode)');
+    console.warn('[Renderer] No renderer available for render loop');
   }
 }
 
