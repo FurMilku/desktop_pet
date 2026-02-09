@@ -1,0 +1,50 @@
+{
+  "id": "app-launcher",
+  "name": "应用启动器",
+  "description": "快速启动和管理应用程序，支持打开常用软件、网站和系统工具",
+  "version": "1.0.0",
+  "triggers": [
+    "打开",
+    "启动",
+    "运行",
+    "执行",
+    "open",
+    "launch",
+    "run",
+    "start",
+    "程序",
+    "应用",
+    "软件"
+  ],
+  "intentPatterns": [
+    "(?:帮我)?(?:打开|启动|运行|执行)(?:一下)?(?<app>.+)",
+    "(?:把)?(?<app>.+?)(?:打开|启动|运行)(?:一下)?",
+    "(?:open|launch|run|start)(?: the)? (?<app>.+)",
+    "(?:can you )?(open|launch|run|start) (?<app>.+)(?: for me)?",
+    "(?:我想|我要)(?:用|使用|打开)(?<app>.+)"
+  ],
+  "mcpServer": "system-tools",
+  "tools": [
+    "open_application",
+    "list_files",
+    "get_system_info",
+    "run_command"
+  ],
+  "category": "productivity",
+  "priority": 90,
+  "enabled": true,
+  "permissions": [
+    "system",
+    "execute"
+  ],
+  "examples": [
+    "打开微信",
+    "启动 Visual Studio Code",
+    "帮我打开浏览器",
+    "运行记事本",
+    "Open Chrome",
+    "Launch Spotify",
+    "打开计算器",
+    "启动终端"
+  ]
+}

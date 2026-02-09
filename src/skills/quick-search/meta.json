@@ -1,0 +1,45 @@
+{
+  "id": "quick-search",
+  "name": "快速搜索",
+  "description": "搜索本地文件和文件内容，帮助用户快速定位文件或查找包含特定内容的文件",
+  "version": "1.0.0",
+  "triggers": [
+    "搜索",
+    "查找",
+    "找",
+    "搜",
+    "search",
+    "find",
+    "look up",
+    "locate",
+    "查询文件",
+    "找文件",
+    "搜索文件"
+  ],
+  "intentPatterns": [
+    "(?:帮我)?(?:搜索|查找|找|搜)(?:一下)?(?<query>.+?)(?:文件|文档)?",
+    "(?:在)?(?<directory>.+?)(?:目录|文件夹)?(?:中|里|下)?(?:搜索|查找|找)(?<query>.+)",
+    "(?:哪些|哪个)文件(?:包含|有|含有)(?<content>.+)",
+    "(?:find|search|look for|locate)\\s+(?<query>.+?)(?:\\s+in\\s+(?<directory>.+))?",
+    "(?:files?|documents?)\\s+(?:containing|with)\\s+(?<content>.+)"
+  ],
+  "mcpServer": "system-tools",
+  "tools": [
+    "list_files",
+    "read_file",
+    "run_command"
+  ],
+  "category": "productivity",
+  "priority": 75,
+  "enabled": true,
+  "permissions": [
+    "filesystem"
+  ],
+  "examples": [
+    "帮我搜索一下报告文件",
+    "在文档目录下找 PDF 文件",
+    "哪些文件包含关键词 meeting",
+    "Find all JavaScript files",
+    "Search for config in the project folder"
+  ]
+}

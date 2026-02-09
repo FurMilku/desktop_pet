@@ -21,6 +21,10 @@ import { getGlobalCapabilityRegistry } from '../shared/services/capability-regis
 
 // IPC 处理器
 import { registerPetHandlers, unregisterPetHandlers } from './ipc/pet-handler';
+import { registerAIHandlers, unregisterAIHandlers } from './ipc/ai-handler';
+
+// AI 服务
+import { initializeAIService, shutdownAIService } from './ai-service';
 
 // 类型导入
 import { EventTypes, AppReadyPayload } from '../shared/types/events';
@@ -180,6 +184,9 @@ function initializeIpcHandlers(): void {
   
   // 注册 Pet IPC 处理器
   registerPetHandlers();
+  
+  // 注册 AI IPC 处理器
+  registerAIHandlers();
   
   // TODO: T022 实现后在此引入其他 IPC 处理器
   // import { registerSystemHandlers } from './ipc/system-handler';
@@ -352,6 +359,11 @@ async function onAppReady(): Promise<void> {
     await initializeDatabase();
     initializeEventBus();
     initializeCapabilityRegistry();
+    
+    // 初始化 AI 服务
+    await initializeAIService();
+    logger.info('AI service initialized');
+    
     initializeIpcHandlers();
     
     // 创建主窗口
@@ -440,7 +452,14 @@ function onWillQuit(event: Electron.Event): void {
   try {
     // 注销 IPC 处理器
     unregisterPetHandlers();
+    unregisterAIHandlers();
     logger.info('IPC handlers unregistered');
+    
+    // 关闭 AI 服务（异步，但在退出时不等待）
+    shutdownAIService().catch((error) => {
+      logger.error('Failed to shutdown AI service:', error);
+    });
+    logger.info('AI service shutdown initiated');
     
     // 关闭数据库连接
     if (databaseService) {

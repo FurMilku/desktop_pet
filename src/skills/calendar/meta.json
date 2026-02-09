@@ -1,0 +1,60 @@
+{
+  "id": "calendar",
+  "name": "日历管理",
+  "description": "管理日历事件，包括创建、查询、更新和删除日程安排，查找空闲时间等",
+  "version": "1.0.0",
+  "triggers": [
+    "日程",
+    "日历",
+    "会议",
+    "安排",
+    "事件",
+    "约会",
+    "schedule",
+    "calendar",
+    "meeting",
+    "event",
+    "appointment"
+  ],
+  "intentPatterns": [
+    "(?:创建|添加|新建|安排)(?:一个)?(?<title>.+?)(?:的)?(?:日程|会议|事件|约会)",
+    "(?<time>今天|明天|后天|这周|下周)?(?:有)?(?:什么|哪些)?(?:日程|安排|会议|事件)",
+    "(?:查询?|查看|看看)(?<time>.+?)(?:的)?日程",
+    "(?<time>今天|明天|后天)(?:几点)?(?:有空|空闲)吗?",
+    "(?:取消|删除)(?<title>.+?)(?:的)?(?:日程|会议|事件)",
+    "(?:修改|更新|改)(?<title>.+?)(?:的)?(?:时间|地点)",
+    "create (?:a )?(?:new )?(?<title>.+?) (?:meeting|event|appointment)",
+    "what(?:'s| is) (?:on )?my (?:schedule|calendar) (?:for )?(?<time>.+)?",
+    "(?:show|list) (?:my )?(?<time>.+?)? ?(?:meetings|events|schedule)",
+    "(?:am i |are there any )(?:free|available) (?:at |on )?(?<time>.+)?",
+    "(?:cancel|delete) (?:the )?(?<title>.+?) (?:meeting|event)"
+  ],
+  "mcpServer": "calendar",
+  "tools": [
+    "create_event",
+    "list_events",
+    "update_event",
+    "delete_event",
+    "get_today_events",
+    "get_upcoming_events",
+    "search_events",
+    "get_free_slots",
+    "get_day_summary"
+  ],
+  "category": "productivity",
+  "priority": 85,
+  "enabled": true,
+  "permissions": [
+    "storage"
+  ],
+  "examples": [
+    "今天有什么安排",
+    "明天下午3点安排一个产品评审会议",
+    "这周有哪些会议",
+    "帮我查一下今天有没有空闲时间",
+    "取消明天的项目会议",
+    "What's on my calendar today?",
+    "Schedule a meeting with the team tomorrow at 10am",
+    "Am I free this Friday afternoon?"
+  ]
+}

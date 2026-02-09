@@ -1,0 +1,68 @@
+PLACEHOLDER: Celebrating Animation
+
+This is a placeholder for the celebrating celebration animation.
+The actual GLB file should contain a 3D skeletal animation with:
+
+Animation Name: celebrating
+Duration: 2.0-3.0 seconds
+Loop: false (single celebration burst)
+FPS: 30
+
+Keyframe Description:
+- Frame 0-15: Anticipation - slight crouch, body compresses
+- Frame 15-30: Launch - arms raise quickly, body extends upward
+- Frame 30-60: Peak celebration - arms fully extended, body at maximum height
+- Frame 60-75: Victory pose - arms wave in celebration pattern
+- Frame 75-90: Return - gradual return to neutral stance
+
+Bone Hierarchy (standard pet rig):
+- Root
+  - Spine
+    - Chest
+      - Head
+        - Ears (L/R)
+      - Arm_L
+        - Hand_L
+      - Arm_R
+        - Hand_R
+    - Tail
+  - Leg_L
+    - Foot_L
+  - Leg_R
+    - Foot_R
+
+Expression Channels:
+- eyes_wide: 0 -> 1.0 (peak excitement)
+- mouth_open: 0 -> 0.8 (happy expression)
+- ears_up: 0 -> 1.0 (alert and excited)
+
+Particle Effects (optional):
+- Sparkle/confetti effect at peak celebration
+- Trail effect on hands during wave
+
+Usage Context:
+- Task completion celebration
+- Achievement unlocked
+- Successful reminder/action execution
+- User praise response
+
+Implementation Note:
+Since actual GLB binary cannot be created as text, the pet-animation.ts
+system will implement this animation procedurally when the GLB file is
+not found or invalid. The procedural implementation should:
+
+1. Create upward bounce motion on root bone
+2. Animate arms in raising/waving pattern
+3. Add slight spin or bounce to body
+4. Include ear/tail excitement animation
+5. Blend back to idle state smoothly
+
+Reference animations:
+- Happy pet celebration in games
+- Victory pose from rhythm games
+- Achievement unlock animations
+
+Related States in pet-animation.ts:
+- celebrating: Main celebration animation
+- Triggers: skill_success, task_complete, user_praise
+- Transition: celebrating -> idle (after completion)

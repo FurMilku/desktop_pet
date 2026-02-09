@@ -1,0 +1,93 @@
+{
+  "name": "reminder",
+  "displayName": "提醒助手",
+  "description": "设置、管理和查询提醒事项，帮助用户按时完成任务",
+  "version": "1.0.0",
+  "author": "Desktop Pet Team",
+  "category": "productivity",
+  "keywords": [
+    "提醒",
+    "reminder",
+    "闹钟",
+    "定时",
+    "提醒我",
+    "别忘了",
+    "记得",
+    "待办",
+    "todo",
+    "日程",
+    "schedule"
+  ],
+  "capabilities": [
+    "create-reminder",
+    "list-reminders",
+    "delete-reminder",
+    "update-reminder",
+    "snooze-reminder"
+  ],
+  "mcpServers": ["reminder"],
+  "parameters": [
+    {
+      "name": "action",
+      "type": "string",
+      "description": "操作类型：create/list/delete/update/snooze",
+      "required": true,
+      "enum": ["create", "list", "delete", "update", "snooze"]
+    },
+    {
+      "name": "title",
+      "type": "string",
+      "description": "提醒标题",
+      "required": false
+    },
+    {
+      "name": "time",
+      "type": "string",
+      "description": "提醒时间（支持自然语言如'明天下午3点'）",
+      "required": false
+    },
+    {
+      "name": "reminderId",
+      "type": "string",
+      "description": "提醒ID（用于删除/更新/延后）",
+      "required": false
+    },
+    {
+      "name": "repeat",
+      "type": "string",
+      "description": "重复规则：none/daily/weekly/monthly",
+      "required": false,
+      "default": "none",
+      "enum": ["none", "daily", "weekly", "monthly"]
+    },
+    {
+      "name": "snoozeDuration",
+      "type": "number",
+      "description": "延后时长（分钟）",
+      "required": false,
+      "default": 5
+    }
+  ],
+  "examples": [
+    {
+      "input": "提醒我明天下午3点开会",
+      "description": "创建明天下午3点的会议提醒"
+    },
+    {
+      "input": "每天早上8点提醒我吃药",
+      "description": "创建每日重复提醒"
+    },
+    {
+      "input": "我有哪些提醒",
+      "description": "查看所有待处理提醒"
+    },
+    {
+      "input": "取消明天的开会提醒",
+      "description": "删除指定提醒"
+    },
+    {
+      "input": "把提醒延后10分钟",
+      "description": "延后当前提醒"
+    }
+  ]
+}

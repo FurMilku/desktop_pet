@@ -1,0 +1,90 @@
+{
+  "name": "notes",
+  "displayName": "笔记助手",
+  "description": "创建、管理和搜索笔记，帮助用户记录想法和信息",
+  "version": "1.0.0",
+  "author": "Desktop Pet Team",
+  "category": "productivity",
+  "keywords": [
+    "笔记",
+    "notes",
+    "记录",
+    "备忘",
+    "memo",
+    "记一下",
+    "写下来",
+    "保存",
+    "查找笔记",
+    "搜索笔记"
+  ],
+  "capabilities": [
+    "create-note",
+    "list-notes",
+    "search-notes",
+    "delete-note",
+    "update-note"
+  ],
+  "mcpServers": ["notes"],
+  "parameters": [
+    {
+      "name": "action",
+      "type": "string",
+      "description": "操作类型：create/list/search/delete/update",
+      "required": true,
+      "enum": ["create", "list", "search", "delete", "update"]
+    },
+    {
+      "name": "title",
+      "type": "string",
+      "description": "笔记标题",
+      "required": false
+    },
+    {
+      "name": "content",
+      "type": "string",
+      "description": "笔记内容",
+      "required": false
+    },
+    {
+      "name": "noteId",
+      "type": "string",
+      "description": "笔记ID（用于删除/更新）",
+      "required": false
+    },
+    {
+      "name": "query",
+      "type": "string",
+      "description": "搜索关键词",
+      "required": false
+    },
+    {
+      "name": "tags",
+      "type": "array",
+      "description": "笔记标签",
+      "required": false,
+      "default": []
+    }
+  ],
+  "examples": [
+    {
+      "input": "记一下：明天要买牛奶和面包",
+      "description": "创建购物清单笔记"
+    },
+    {
+      "input": "帮我记录会议要点：1. 项目进度 2. 下周计划",
+      "description": "创建会议笔记"
+    },
+    {
+      "input": "我的笔记有哪些",
+      "description": "查看所有笔记"
+    },
+    {
+      "input": "搜索关于项目的笔记",
+      "description": "按关键词搜索笔记"
+    },
+    {
+      "input": "删除购物清单笔记",
+      "description": "删除指定笔记"
+    }
+  ]
+}

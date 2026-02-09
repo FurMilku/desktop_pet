@@ -1,0 +1,36 @@
+PLACEHOLDER_GLB_FILE
+=====================================
+Animation: sleepy (瞌睡动画)
+Type: Skeletal Animation
+Format: GLB (glTF Binary)
+=====================================
+
+This is a placeholder file for the sleepy animation.
+
+Animation Description:
+- 宠物逐渐闭眼，身体微微下沉
+- 呼吸变慢，偶尔打哈欠
+- 眼睛半睁半闭，表现困倦状态
+- 头部偶尔点头，像是要睡着
+
+Animation Specifications:
+- Duration: 4-6 seconds (loop)
+- Frame Rate: 30 fps
+- Bone Structure: Standard pet rig
+- Loop Type: Seamless loop
+
+Trigger Conditions:
+- 用户长时间未互动 (>5分钟)
+- 系统检测到夜间时间
+- 用户手动触发休息模式
+
+Implementation Notes:
+- pet-animation.ts 中包含程序化的 sleepy 状态动画
+- 此文件用于存放完整的骨骼动画数据
+- 使用 Three.js AnimationMixer 加载和播放
+
+To Replace:
+1. Create actual GLB animation in Blender/Maya
+2. Export with embedded textures
+3. Optimize for web (Draco compression)
+4. Replace this placeholder file

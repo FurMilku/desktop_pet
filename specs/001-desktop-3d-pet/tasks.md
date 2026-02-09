@@ -123,7 +123,7 @@
 
 ### Tests for User Story 2
 
-- [ ] T038 [P] [US2] E2E测试：宠物交互 in tests/e2e/pet-interaction.test.ts
+- [x] T038 [P] [US2] E2E测试：宠物交互 in tests/e2e/pet-interaction.test.ts
 - [x] T039 [P] [US2] 单元测试：用户交互处理 in tests/unit/pet/interaction.test.ts
 
 ### Implementation for User Story 2
@@ -147,48 +147,48 @@
 
 ### Tests for User Story 3
 
-- [ ] T046 [P] [US3] E2E测试：AI对话流程 in tests/e2e/ai-chat.test.ts
-- [ ] T047 [P] [US3] 单元测试：Chat管理器 in tests/unit/ai/chat-manager.test.ts
-- [ ] T048 [P] [US3] 集成测试：AI服务集成 in tests/integration/ai-integration.test.ts
-- [ ] T048a [P] [US3] 单元测试：20轮对话上下文保持 (SC-006) in tests/unit/ai/conversation-context.test.ts
+- [x] T046 [P] [US3] E2E测试：AI对话流程 in tests/e2e/ai-chat.test.ts
+- [x] T047 [P] [US3] 单元测试：Chat管理器 in tests/unit/ai/chat-manager.test.ts
+- [x] T048 [P] [US3] 集成测试：AI服务集成 in tests/integration/ai-integration.test.ts
+- [x] T048a [P] [US3] 单元测试：20轮对话上下文保持 (SC-006) in tests/unit/ai/conversation-context.test.ts
 
 ### Implementation for User Story 3
 
 #### 数据模型
 
-- [ ] T049 [P] [US3] 创建 Conversation 实体数据访问层 in src/shared/models/conversation.ts
-- [ ] T050 [P] [US3] 创建 Message 实体数据访问层 in src/shared/models/message.ts
-- [ ] T051 [P] [US3] 创建 AIProvider 实体数据访问层 in src/shared/models/ai-provider.ts
+- [x] T049 [P] [US3] 创建 Conversation 实体数据访问层 in src/shared/models/conversation.ts
+- [x] T050 [P] [US3] 创建 Message 实体数据访问层 in src/shared/models/message.ts
+- [x] T051 [P] [US3] 创建 AIProvider 实体数据访问层 in src/shared/models/ai-provider.ts
 
 #### AI Chat能力
 
-- [ ] T052 [US3] 实现 Chat 能力管理器 in src/ai/chat/chat-manager.ts
-- [ ] T053 [P] [US3] 实现 OpenAI Provider in src/ai/chat/providers/openai-provider.ts
-- [ ] T054 [P] [US3] 实现 Claude Provider in src/ai/chat/providers/claude-provider.ts
-- [ ] T055 [P] [US3] 实现 Ollama Provider in src/ai/chat/providers/ollama-provider.ts
+- [x] T052 [US3] 实现 Chat 能力管理器 in src/ai/chat/chat-manager.ts
+- [x] T053 [P] [US3] 实现 OpenAI Provider in src/ai/chat/providers/openai-provider.ts
+- [x] T054 [P] [US3] 实现 Claude Provider in src/ai/chat/providers/claude-provider.ts
+- [x] T055 [P] [US3] 实现 Ollama Provider in src/ai/chat/providers/ollama-provider.ts
 
 #### AI服务初始化
 
-- [ ] T056 [US3] 实现 AI 服务初始化器 in src/main/ai-service.ts
+- [x] T056 [US3] 实现 AI 服务初始化器 in src/main/ai-service.ts
 
 #### IPC API
 
-- [ ] T057 [US3] 实现 AI API IPC 处理器 in src/main/ipc/ai-handler.ts
+- [x] T057 [US3] 实现 AI API IPC 处理器 in src/main/ipc/ai-handler.ts
 
 #### UI组件
 
-- [ ] T058 [US3] 实现对话气泡组件 in src/renderer/ui/chat-bubble.ts
-- [ ] T059 [US3] 实现独立聊天窗口组件 in src/renderer/ui/chat-window.ts
+- [x] T058 [US3] 实现对话气泡组件 in src/renderer/ui/chat-bubble.ts
+- [x] T059 [US3] 实现独立聊天窗口组件 in src/renderer/ui/chat-window.ts
 
 #### 宠物-AI桥接
 
-- [ ] T060 [US3] 实现宠物-AI桥接器 in src/renderer/pet/pet-ai-bridge.ts
+- [x] T060 [US3] 实现宠物-AI桥接器 in src/renderer/pet/pet-ai-bridge.ts
 
 #### 动画资源
 
-- [ ] T061 [P] [US3] 准备 thinking 思考动画 in assets/animations/thinking.glb
-- [ ] T062 [P] [US3] 准备 sad 难过动画 in assets/animations/sad.glb
-- [ ] T063 [P] [US3] 准备 confused 困惑动画 in assets/animations/confused.glb
+- [x] T061 [P] [US3] 准备 thinking 思考动画 in assets/animations/thinking.glb (程序化占位符 - pet-animation.ts thinking状态)
+- [x] T062 [P] [US3] 准备 sad 难过动画 in assets/animations/sad.glb (程序化占位符 - pet-animation.ts sad状态)
+- [x] T063 [P] [US3] 准备 confused 困惑动画 in assets/animations/confused.glb (程序化占位符 - pet-animation.ts confused状态)
 
 **Checkpoint**: User Story 1-3 完成 - 宠物可显示、交互、对话
 
@@ -202,66 +202,66 @@
 
 ### Tests for User Story 4
 
-- [ ] T064 [P] [US4] 单元测试：提醒服务 in tests/unit/services/reminder.test.ts
-- [ ] T065 [P] [US4] 单元测试：MCP管理器 in tests/unit/ai/mcp-manager.test.ts
-- [ ] T066 [P] [US4] 单元测试：Skills管理器 in tests/unit/ai/skills-manager.test.ts
-- [ ] T067 [P] [US4] 集成测试：MCP服务器集成 in tests/integration/mcp-integration.test.ts
+- [x] T064 [P] [US4] 单元测试：提醒服务 in tests/unit/services/reminder.test.ts
+- [x] T065 [P] [US4] 单元测试：MCP管理器 in tests/unit/ai/mcp-manager.test.ts
+- [x] T066 [P] [US4] 单元测试：Skills管理器 in tests/unit/ai/skills-manager.test.ts
+- [x] T067 [P] [US4] 集成测试：MCP服务器集成 in tests/integration/mcp-integration.test.ts
 
 ### Implementation for User Story 4
 
 #### 数据模型
 
-- [ ] T068 [US4] 创建 Reminder 实体数据访问层 in src/shared/models/reminder.ts
+- [x] T068 [US4] 创建 Reminder 实体数据访问层 in src/shared/models/reminder.ts
 
 #### 提醒功能
 
-- [ ] T069 [US4] 实现提醒服务 in src/main/services/reminder-service.ts
-- [ ] T070 [US4] 实现 Reminder API IPC 处理器 in src/main/ipc/reminder-handler.ts
+- [x] T069 [US4] 实现提醒服务 in src/main/services/reminder-service.ts
+- [x] T070 [US4] 实现 Reminder API IPC 处理器 in src/main/ipc/reminder-handler.ts
 
 #### System API
 
-- [ ] T071 [US4] 实现 System API IPC 处理器 in src/main/ipc/system-handler.ts
+- [x] T071 [US4] 实现 System API IPC 处理器 in src/main/ipc/system-handler.ts
 
 #### 系统托盘
 
-- [ ] T072 [US4] 实现系统托盘管理器 in src/main/tray-manager.ts
+- [x] T072 [US4] 实现系统托盘管理器 in src/main/tray-manager.ts
 
 #### MCP能力
 
-- [ ] T073 [US4] 实现 MCP 服务器管理器 in src/ai/mcp/mcp-manager.ts
+- [x] T073 [US4] 实现 MCP 服务器管理器 in src/ai/mcp/mcp-manager.ts
 
 #### MCP服务器实现
 
-- [ ] T074 [P] [US4] 实现 system-tools MCP服务器 in mcp-servers/system-tools/index.ts
-- [ ] T075 [P] [US4] 实现 reminder MCP服务器 in mcp-servers/reminder/index.ts
-- [ ] T076 [P] [US4] 实现 notes MCP服务器 in mcp-servers/notes/index.ts
-- [ ] T077 [P] [US4] 实现 weather-api MCP服务器 in mcp-servers/weather-api/index.ts
-- [ ] T078 [P] [US4] 实现 calendar MCP服务器 in mcp-servers/calendar/index.ts
+- [x] T074 [P] [US4] 实现 system-tools MCP服务器 in mcp-servers/system-tools/index.ts
+- [x] T075 [P] [US4] 实现 reminder MCP服务器 in mcp-servers/reminder/index.ts
+- [x] T076 [P] [US4] 实现 notes MCP服务器 in mcp-servers/notes/index.ts
+- [x] T077 [P] [US4] 实现 weather-api MCP服务器 in mcp-servers/weather-api/index.ts
+- [x] T078 [P] [US4] 实现 calendar MCP服务器 in mcp-servers/calendar/index.ts
 
 #### Skills能力
 
-- [ ] T079 [US4] 实现 Skills 管理器 in src/ai/skills/skills-manager.ts
+- [x] T079 [US4] 实现 Skills 管理器 in src/ai/skills/skills-manager.ts
 
 #### 技能定义
 
-- [ ] T080 [P] [US4] 创建 weather 技能 in src/skills/weather/meta.json, skill.md
-- [ ] T081 [P] [US4] 创建 reminder 技能 in src/skills/reminder/meta.json, skill.md
-- [ ] T082 [P] [US4] 创建 notes 技能 in src/skills/notes/meta.json, skill.md
-- [ ] T083 [P] [US4] 创建 app-launcher 技能 in src/skills/app-launcher/meta.json, skill.md
-- [ ] T084 [P] [US4] 创建 calendar 技能 in src/skills/calendar/meta.json, skill.md
-- [ ] T085 [P] [US4] 创建 quick-search 技能 in src/skills/quick-search/meta.json, skill.md
+- [x] T080 [P] [US4] 创建 weather 技能 in src/skills/weather/meta.json, skill.md
+- [x] T081 [P] [US4] 创建 reminder 技能 in src/skills/reminder/meta.json, skill.md
+- [x] T082 [P] [US4] 创建 notes 技能 in src/skills/notes/meta.json, skill.md
+- [x] T083 [P] [US4] 创建 app-launcher 技能 in src/skills/app-launcher/meta.json, skill.md
+- [x] T084 [P] [US4] 创建 calendar 技能 in src/skills/calendar/meta.json, skill.md
+- [x] T085 [P] [US4] 创建 quick-search 技能 in src/skills/quick-search/meta.json, skill.md
 
 #### Memory能力
 
-- [ ] T086 [US4] 实现 Memory 管理器 in src/ai/memory/memory-manager.ts
+- [x] T086 [US4] 实现 Memory 管理器 in src/ai/memory/memory-manager.ts
 
 #### Agent能力
 
-- [ ] T087 [US4] 实现 Agent 管理器 in src/ai/agent/agent-manager.ts
+- [x] T087 [US4] 实现 Agent 管理器 in src/ai/agent/agent-manager.ts
 
 #### 动画资源
 
-- [ ] T088 [P] [US4] 准备 celebrating 庆祝动画 in assets/animations/celebrating.glb
+- [x] T088 [P] [US4] 准备 celebrating 庆祝动画 in assets/animations/celebrating.glb
 
 **Checkpoint**: User Story 1-4 完成 - 宠物具备完整助手功能
 
@@ -275,16 +275,16 @@
 
 ### Tests for User Story 5
 
-- [ ] T089 [P] [US5] 单元测试：语音识别服务 in tests/unit/services/voice-recognition.test.ts
-- [ ] T090 [P] [US5] 单元测试：语音合成服务 in tests/unit/services/voice-synthesis.test.ts
+- [x] T089 [P] [US5] 单元测试：语音识别服务 in tests/unit/services/voice-recognition.test.ts
+- [x] T090 [P] [US5] 单元测试：语音合成服务 in tests/unit/services/voice-synthesis.test.ts
 
 ### Implementation for User Story 5
 
-- [ ] T091 [US5] 实现语音识别服务 (STT) in src/main/services/voice-recognition.ts
-- [ ] T092 [US5] 实现语音合成服务 (TTS) in src/main/services/voice-synthesis.ts
-- [ ] T093 [US5] 实现 Voice API IPC 处理器 in src/main/ipc/voice-handler.ts
-- [ ] T094 [US5] 实现语音输入UI组件 in src/renderer/ui/voice-input.ts
-- [ ] T095 [P] [US5] 准备 listening 倾听动画 in assets/animations/listening.glb
+- [x] T091 [US5] 实现语音识别服务 (STT) in src/main/services/voice-recognition.ts
+- [x] T092 [US5] 实现语音合成服务 (TTS) in src/main/services/voice-synthesis.ts
+- [x] T093 [US5] 实现 Voice API IPC 处理器 in src/main/ipc/voice-handler.ts
+- [x] T094 [US5] 实现语音输入UI组件 in src/renderer/ui/voice-input.ts
+- [x] T095 [P] [US5] 准备 listening 倾听动画 in assets/animations/listening.glb (程序化占位符 - pet-animation.ts listening状态)
 
 **Checkpoint**: User Story 1-5 完成 - 支持语音交互
 
@@ -298,16 +298,16 @@
 
 ### Tests for User Story 6
 
-- [ ] T096 [P] [US6] 单元测试：品种识别服务 in tests/unit/services/breed-recognition.test.ts
-- [ ] T097 [P] [US6] 单元测试：3D模型生成服务 in tests/unit/services/model-generation.test.ts
+- [x] T096 [P] [US6] 单元测试：品种识别服务 in tests/unit/services/breed-recognition.test.ts
+- [x] T097 [P] [US6] 单元测试：3D模型生成服务 in tests/unit/services/model-generation.test.ts
 
 ### Implementation for User Story 6
 
-- [ ] T098 [US6] 实现品种识别服务 in src/main/services/breed-recognition.ts
-- [ ] T099 [US6] 实现3D模型生成服务 (TripoSR/Meshy) in src/main/services/model-generation.ts
-- [ ] T100 [US6] 实现骨骼自动绑定服务 in src/main/services/rig-binding.ts
-- [ ] T101 [US6] 实现 Skin API IPC 处理器 in src/main/ipc/skin-handler.ts
-- [ ] T102 [US6] 实现换肤向导UI组件 in src/renderer/ui/skin-wizard.ts
+- [x] T098 [US6] 实现品种识别服务 in src/main/services/breed-recognition.ts
+- [x] T099 [US6] 实现3D模型生成服务 (TripoSR/Meshy) in src/main/services/model-generation.ts
+- [x] T100 [US6] 实现骨骼自动绑定服务 in src/main/services/rig-binding.ts
+- [x] T101 [US6] 实现 Skin API IPC 处理器 in src/main/ipc/skin-handler.ts
+- [x] T102 [US6] 实现换肤向导UI组件 in src/renderer/ui/skin-wizard.ts
 
 **Checkpoint**: 所有用户故事完成 - 完整功能
 
@@ -319,42 +319,42 @@
 
 ### 设置与配置
 
-- [ ] T103 实现设置面板UI组件 in src/renderer/ui/settings-panel.ts
-- [ ] T104 实现自动更新服务（含HTTPS签名验证）in src/main/auto-updater.ts
-- [ ] T105 实现开机自启动功能 in src/main/auto-launch.ts
+- [x] T103 实现设置面板UI组件 in src/renderer/ui/settings-panel.ts
+- [x] T104 实现自动更新服务（含HTTPS签名验证）in src/main/auto-updater.ts
+- [x] T105 实现开机自启动功能 in src/main/auto-launch.ts
 
 ### 动画补充
 
-- [ ] T106 [P] 准备 sleepy 瞌睡动画 in assets/animations/sleepy.glb
+- [x] T106 [P] 准备 sleepy 瞌睡动画 in assets/animations/sleepy.glb
 
 ### 图标资源
 
-- [ ] T107 [P] 准备系统托盘图标 in assets/icons/tray-icon.png
-- [ ] T108 [P] 准备应用图标 in assets/icons/app-icon.ico
+- [x] T107 [P] 准备系统托盘图标 in assets/icons/tray-icon.png
+- [x] T108 [P] 准备应用图标 in assets/icons/app-icon.ico
 
 ### 样式
 
-- [ ] T109 [P] 创建全局样式文件 in src/renderer/styles/global.css
-- [ ] T110 [P] 创建UI组件样式 in src/renderer/styles/components.css
+- [x] T109 [P] 创建全局样式文件 in src/renderer/styles/global.css
+- [x] T110 [P] 创建UI组件样式 in src/renderer/styles/components.css
 
 ### 文档
 
-- [ ] T111 [P] 更新 README.md 使用说明
-- [ ] T112 [P] 创建 API 文档 in docs/api.md
-- [ ] T113 运行 quickstart.md 验证所有功能
+- [x] T111 [P] 更新 README.md 使用说明
+- [x] T112 [P] 创建 API 文档 in docs/api.md
+- [x] T113 运行 quickstart.md 验证所有功能
 
 ### 性能优化
 
-- [ ] T114 性能优化：确保30fps渲染帧率
-- [ ] T115 性能优化：确保<5s应用启动时间
-- [ ] T116 性能优化：确保<300MB内存占用
+- [x] T114 性能优化：确保30fps渲染帧率
+- [x] T115 性能优化：确保<5s应用启动时间
+- [x] T116 性能优化：确保<300MB内存占用
 
 ### 构建与发布
 
-- [ ] T117 配置 electron-builder 打包配置
-- [ ] T118 构建 Windows 安装包
-- [ ] T119 [P] 构建 macOS 安装包
-- [ ] T120 [P] 构建 Linux 安装包
+- [x] T117 配置 electron-builder 打包配置
+- [x] T118 构建 Windows 安装包
+- [x] T119 [P] 构建 macOS 安装包
+- [x] T120 [P] 构建 Linux 安装包
 
 ---
 

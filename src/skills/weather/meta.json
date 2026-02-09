@@ -1,0 +1,68 @@
+{
+  "name": "weather",
+  "displayName": "天气查询",
+  "description": "查询指定城市的天气信息，包括当前天气和未来预报",
+  "version": "1.0.0",
+  "author": "Desktop Pet Team",
+  "category": "information",
+  "keywords": [
+    "天气",
+    "weather",
+    "温度",
+    "气温",
+    "下雨",
+    "晴天",
+    "阴天",
+    "预报",
+    "forecast",
+    "穿什么",
+    "带伞"
+  ],
+  "capabilities": [
+    "current-weather",
+    "weather-forecast",
+    "weather-alerts"
+  ],
+  "mcpServers": ["weather-api"],
+  "parameters": [
+    {
+      "name": "city",
+      "type": "string",
+      "description": "城市名称",
+      "required": true
+    },
+    {
+      "name": "days",
+      "type": "number",
+      "description": "预报天数（1-7）",
+      "required": false,
+      "default": 1
+    },
+    {
+      "name": "units",
+      "type": "string",
+      "description": "温度单位：celsius/fahrenheit",
+      "required": false,
+      "default": "celsius",
+      "enum": ["celsius", "fahrenheit"]
+    }
+  ],
+  "examples": [
+    {
+      "input": "今天北京天气怎么样",
+      "description": "查询北京当前天气"
+    },
+    {
+      "input": "上海明天会下雨吗",
+      "description": "查询上海明天天气预报"
+    },
+    {
+      "input": "深圳未来三天天气",
+      "description": "查询深圳三天天气预报"
+    },
+    {
+      "input": "今天需要带伞吗",
+      "description": "根据当前位置天气给出建议"
+    }
+  ]
+}
