@@ -214,6 +214,31 @@ export const MIGRATIONS: Migration[] = [
   },
   {
     version: 2,
+    description: '添加 ai_providers 缺失的列',
+    up: (db: DatabaseService) => {
+      // 添加 status 列
+      db.exec(`
+        ALTER TABLE ai_providers ADD COLUMN status TEXT DEFAULT 'inactive';
+      `);
+      
+      // 添加 last_used_at 列
+      db.exec(`
+        ALTER TABLE ai_providers ADD COLUMN last_used_at INTEGER;
+      `);
+      
+      // 添加 config 列
+      db.exec(`
+        ALTER TABLE ai_providers ADD COLUMN config TEXT;
+      `);
+    },
+    down: (db: DatabaseService) => {
+      // SQLite 不支持 DROP COLUMN，需要重建表
+      // 这里简化处理，降级时不做任何操作
+      console.warn('Downgrade from version 2 requires manual table rebuild');
+    },
+  },
+  {
+    version: 3,
     description: '插入默认数据',
     up: (db: DatabaseService) => {
       const timestamp = now();
