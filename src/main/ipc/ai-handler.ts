@@ -13,7 +13,6 @@ import {
   ChatMessage,
   ChatCompletionOptions,
   ChatCompletionResult,
-  StreamChunk,
   ProviderStatus,
   AIProviderConfig,
   AIServiceError,
@@ -268,7 +267,7 @@ async function handleChat(
     
     return result;
   } catch (error) {
-    logger.error('Failed to handle chat', error);
+    logger.error('Failed to handle chat', { error: error instanceof Error ? error.message : String(error) });
     
     if (error instanceof AIServiceError) {
       throw aiErrorToIPCError(error);
@@ -313,7 +312,7 @@ async function handleChatStream(
     }
     
     // 异步处理流式响应
-    (async () => {
+    void (async (): Promise<void> => {
       try {
         const chatManager = getChatManager();
         const stream = chatManager.chatStream(messages, options);
@@ -341,7 +340,7 @@ async function handleChatStream(
         
         logger.debug('Stream completed', { requestId });
       } catch (error) {
-        logger.error('Stream error', { requestId, error });
+        logger.error('Stream error', { requestId, error: error instanceof Error ? error.message : String(error) });
         
         // 发送错误事件
         if (!window.isDestroyed()) {
@@ -362,7 +361,7 @@ async function handleChatStream(
     
     return { requestId, success: true };
   } catch (error) {
-    logger.error('Failed to start chat stream', error);
+    logger.error('Failed to start chat stream', { error: error instanceof Error ? error.message : String(error) });
     activeStreams.delete(requestId);
     
     if (error instanceof AIServiceError) {
@@ -399,7 +398,7 @@ async function handleChatStreamCancel(
     logger.debug('Stream not found or already completed', { requestId });
     return false;
   } catch (error) {
-    logger.error('Failed to cancel stream', error);
+    logger.error('Failed to cancel stream', { error: error instanceof Error ? error.message : String(error) });
     if ((error as IPCError).code) {
       throw error;
     }
@@ -427,7 +426,7 @@ async function handleCheckAvailability(
     
     return statuses;
   } catch (error) {
-    logger.error('Failed to check availability', error);
+    logger.error('Failed to check availability', { error: error instanceof Error ? error.message : String(error) });
     
     if ((error as IPCError).code) {
       throw error;
@@ -454,7 +453,7 @@ async function handleGetProviders(
     
     return providers;
   } catch (error) {
-    logger.error('Failed to get providers', error);
+    logger.error('Failed to get providers', { error: error instanceof Error ? error.message : String(error) });
     
     if ((error as IPCError).code) {
       throw error;
@@ -481,7 +480,7 @@ async function handleGetActiveProvider(
     
     return provider;
   } catch (error) {
-    logger.error('Failed to get active provider', error);
+    logger.error('Failed to get active provider', { error: error instanceof Error ? error.message : String(error) });
     
     if ((error as IPCError).code) {
       throw error;
@@ -508,7 +507,7 @@ async function handleSetDefaultProvider(
     
     logger.debug('Set default provider completed', { providerId });
   } catch (error) {
-    logger.error('Failed to set default provider', error);
+    logger.error('Failed to set default provider', { error: error instanceof Error ? error.message : String(error) });
     
     if (error instanceof AIServiceError) {
       throw aiErrorToIPCError(error);
@@ -553,7 +552,7 @@ async function handleRegisterProvider(
       name: request.name,
       type: request.type,
       model: request.model,
-      endpoint: request.endpoint,
+      ...(request.endpoint !== undefined && { endpoint: request.endpoint }),
       isDefault: request.isDefault ?? false,
       isEnabled: request.isEnabled ?? true,
       priority: request.priority ?? 100,
@@ -565,7 +564,7 @@ async function handleRegisterProvider(
     
     logger.debug('Register provider completed', { id: request.id });
   } catch (error) {
-    logger.error('Failed to register provider', error);
+    logger.error('Failed to register provider', { error: error instanceof Error ? error.message : String(error) });
     
     if (error instanceof AIServiceError) {
       throw aiErrorToIPCError(error);
@@ -596,7 +595,7 @@ async function handleRemoveProvider(
     
     logger.debug('Remove provider completed', { providerId });
   } catch (error) {
-    logger.error('Failed to remove provider', error);
+    logger.error('Failed to remove provider', { error: error instanceof Error ? error.message : String(error) });
     
     if (error instanceof AIServiceError) {
       throw aiErrorToIPCError(error);
@@ -618,7 +617,7 @@ async function handleIsInitialized(_event: IpcMainInvokeEvent): Promise<boolean>
     logger.debug('Handle is initialized request');
     return isAIServiceInitialized();
   } catch (error) {
-    logger.error('Failed to check initialization status', error);
+    logger.error('Failed to check initialization status', { error: error instanceof Error ? error.message : String(error) });
     return false;
   }
 }
