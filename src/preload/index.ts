@@ -346,6 +346,15 @@ const windowAPI = {
   getDisplays: (): Promise<DisplayInfo[]> => {
     return ipcRenderer.invoke('window:get-displays');
   },
+
+  /**
+   * 设置点击穿透
+   * @param enable 是否启用点击穿透
+   * @param options.forward 是否转发鼠标事件（启用后可以检测鼠标位置）
+   */
+  setClickThrough: (enable: boolean, options?: { forward?: boolean }): Promise<void> => {
+    return ipcRenderer.invoke('window:set-click-through', enable, options);
+  },
 };
 
 // ============================================================================

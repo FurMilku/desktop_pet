@@ -9,6 +9,7 @@
 
 import { ipcMain, IpcMainInvokeEvent } from 'electron';
 import { getLogger } from '../logger';
+import { getWindowManager } from '../window-manager';
 import {
   Pet,
   PetSkin,
@@ -328,6 +329,26 @@ async function handleSetAnimation(
     
     repo.updateAnimationState(pet.id, animation);
     logger.debug('Animation state updated', { petId: pet.id, animation });
+    
+    // 发送状态变化事件到渲染进程，触发动画更新
+    const windowManager = getWindowManager();
+    const win = windowManager.getWindow();
+    if (win && !win.isDestroyed()) {
+      const newState: PetState = {
+        animation: animation,
+        position: {
+          x: pet.positionX,
+          y: pet.positionY,
+          monitor: pet.displayIndex,
+        },
+        skinId: pet.currentSkinId || 'default',
+        emotionalValue: 50,
+      };
+      win.webContents.send('pet:state-changed', newState);
+      logger.debug('Sent pet:state-changed event to renderer', { animation });
+    } else {
+      logger.warn('Cannot send pet:state-changed: window not available');
+    }
   } catch (error) {
     logger.error('Failed to set animation', error);
     if ((error as IPCError).code) {

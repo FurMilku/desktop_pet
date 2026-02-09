@@ -243,7 +243,7 @@ export const MIGRATIONS: Migration[] = [
     up: (db: DatabaseService) => {
       const timestamp = now();
 
-      // 插入默认宠物
+      // 插入默认宠物（不包含 animation_state，会在 v4 添加）
       db.run(`
         INSERT OR IGNORE INTO pets (id, position_x, position_y, created_at, updated_at) 
         VALUES (?, ?, ?, ?, ?)
@@ -304,6 +304,46 @@ export const MIGRATIONS: Migration[] = [
         DELETE FROM ai_providers WHERE id IN ('openai-gpt4', 'claude-sonnet', 'ollama-llama');
         DELETE FROM pets WHERE id = 'default';
       `);
+    },
+  },
+  {
+    version: 4,
+    description: '添加 pets 表的 animation_state 列',
+    up: (db: DatabaseService) => {
+      // 添加 animation_state 列，默认值为 'idle'
+      db.exec(`
+        ALTER TABLE pets ADD COLUMN animation_state TEXT DEFAULT 'idle';
+      `);
+      
+      // 更新现有记录的 animation_state
+      db.run(`
+        UPDATE pets SET animation_state = 'idle' WHERE animation_state IS NULL
+      `);
+    },
+    down: (db: DatabaseService) => {
+      // SQLite 不支持 DROP COLUMN，需要重建表
+      // 这里简化处理，降级时不做任何操作
+      console.warn('Downgrade from version 4 requires manual table rebuild');
+    },
+  },
+  {
+    version: 5,
+    description: '添加 pets 表的 display_index 列',
+    up: (db: DatabaseService) => {
+      // 添加 display_index 列，默认值为 0（主显示器）
+      db.exec(`
+        ALTER TABLE pets ADD COLUMN display_index INTEGER DEFAULT 0;
+      `);
+      
+      // 更新现有记录的 display_index
+      db.run(`
+        UPDATE pets SET display_index = 0 WHERE display_index IS NULL
+      `);
+    },
+    down: (db: DatabaseService) => {
+      // SQLite 不支持 DROP COLUMN，需要重建表
+      // 这里简化处理，降级时不做任何操作
+      console.warn('Downgrade from version 5 requires manual table rebuild');
     },
   },
 ];

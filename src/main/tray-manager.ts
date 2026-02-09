@@ -20,8 +20,9 @@ import {
 } from 'electron';
 import * as path from 'path';
 import { ipcLogger } from './logger';
-import { EventBus } from '../shared/services/event-bus';
-import { EventType } from '../shared/types/events';
+import { EventBus, getGlobalEventBus } from '../shared/services/event-bus';
+import { EventTypes } from '../shared/types/events';
+import { dialog } from 'electron';
 
 // ============================================================================
 // Types
@@ -113,12 +114,12 @@ export class TrayManager {
   private config: Required<TrayManagerConfig>;
   private state: TrayState;
   private eventBus: EventBus;
-  private isAlwaysOnTop: boolean = true;
+  private isAlwaysOnTop = true;
 
   private constructor(config: TrayManagerConfig = {}) {
     this.config = {
-      iconPath: config.iconPath || DEFAULT_ICON_PATH,
-      tooltip: config.tooltip || DEFAULT_TOOLTIP,
+      iconPath: config.iconPath ?? DEFAULT_ICON_PATH,
+      tooltip: config.tooltip ?? DEFAULT_TOOLTIP,
       showOnClick: config.showOnClick ?? true,
       showOnDoubleClick: config.showOnDoubleClick ?? false,
     };
@@ -129,7 +130,7 @@ export class TrayManager {
       hasNotificationBadge: false,
     };
 
-    this.eventBus = EventBus.getInstance();
+    this.eventBus = getGlobalEventBus();
   }
 
   /**
@@ -285,7 +286,7 @@ export class TrayManager {
    * 绑定托盘事件
    */
   private bindEvents(): void {
-    if (!this.tray) return;
+    if (!this.tray) {return;}
 
     // 单击事件
     this.tray.on('click', (_event, bounds) => {
@@ -296,8 +297,11 @@ export class TrayManager {
       }
 
       this.eventBus.emit({
-        type: EventType.SYSTEM_READY,
-        payload: { source: 'tray-click' },
+        type: EventTypes.SYSTEM.TRAY_CLICK,
+        payload: { 
+          position: { x: bounds.x, y: bounds.y },
+          bounds: bounds,
+        },
         timestamp: Date.now(),
       });
     });
@@ -330,9 +334,9 @@ export class TrayManager {
    * 更新上下文菜单
    */
   updateContextMenu(customItems?: TrayMenuItem[]): void {
-    if (!this.tray) return;
+    if (!this.tray) {return;}
 
-    const menuItems = customItems || this.getDefaultMenuItems();
+    const menuItems = customItems ?? this.getDefaultMenuItems();
     const template = this.convertToElectronMenuItems(menuItems);
     const contextMenu = Menu.buildFromTemplate(template);
 
@@ -419,13 +423,29 @@ export class TrayManager {
       const electronItem: MenuItemConstructorOptions = {
         id: item.id,
         label: item.label,
-        type: item.type,
         enabled: item.enabled ?? true,
         visible: item.visible ?? true,
-        checked: item.checked,
-        accelerator: item.accelerator,
-        click: item.click,
       };
+
+      // 只在 type 存在时添加，避免 undefined 赋值问题
+      if (item.type) {
+        electronItem.type = item.type;
+      }
+
+      // 只在 checked 存在时添加，避免 undefined 赋值给可选属性
+      if (item.checked !== undefined) {
+        electronItem.checked = item.checked;
+      }
+
+      // 只在 accelerator 存在时添加，避免 undefined 赋值给可选属性
+      if (item.accelerator !== undefined) {
+        electronItem.accelerator = item.accelerator;
+      }
+
+      // 只在 click 存在时添加，避免 undefined 赋值给可选属性
+      if (item.click) {
+        electronItem.click = item.click;
+      }
 
       if (item.icon) {
         try {
@@ -538,16 +558,14 @@ export class TrayManager {
    */
   private getMainWindow(): BrowserWindow | null {
     const windows = BrowserWindow.getAllWindows();
-    return windows.length > 0 ? windows[0] : null;
+    return windows[0] ?? null;
   }
 
   /**
    * 显示关于对话框
    */
   private showAboutDialog(): void {
-    const { dialog } = require('electron');
-
-    dialog.showMessageBox({
+    void dialog.showMessageBox({
       type: 'info',
       title: '关于 桌面3D小宠物',
       message: '桌面3D小宠物',

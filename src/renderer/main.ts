@@ -4,6 +4,7 @@
  */
 
 import { createPetRenderer, IPetRenderer, AnimationState as PetAnimationState } from './pet/pet-renderer';
+import { PET_WINDOW_WIDTH, PET_WINDOW_HEIGHT } from '../shared/config/pet-window';
 
 // ============================================================
 // 类型定义 (基于 contracts/ipc-api.md)
@@ -58,6 +59,7 @@ interface WindowAPI {
   setAlwaysOnTop(alwaysOnTop: boolean): Promise<void>;
   minimize(): Promise<void>;
   getDisplays(): Promise<DisplayInfo[]>;
+  setClickThrough(enable: boolean, options?: { forward?: boolean }): Promise<void>;
 }
 
 // Pet API
@@ -120,6 +122,27 @@ const errorElement = document.getElementById('error') as HTMLDivElement;
 const errorMessage = document.getElementById('error-message') as HTMLParagraphElement;
 
 // ============================================================
+// 鼠标拖拽状态
+// ============================================================
+
+/** 是否正在拖拽 */
+let isDragging = false;
+
+/** 拖拽开始时鼠标的屏幕坐标 */
+let dragStartMouseX = 0;
+let dragStartMouseY = 0;
+
+/** 拖拽开始时窗口的位置 */
+let dragStartWindowX = 0;
+let dragStartWindowY = 0;
+
+/** 拖拽阈值（像素），避免误触 */
+const DRAG_THRESHOLD = 3;
+
+/** 是否已超过拖拽阈值 */
+let hasDragThresholdMet = false;
+
+// ============================================================
 // 工具函数
 // ============================================================
 
@@ -171,6 +194,71 @@ let petRenderer: IPetRenderer | null = null;
 let usePlaceholderPet = false;
 
 // ============================================================
+// 占位宠物动画控制变量（模块级）
+// ============================================================
+
+/** Three.js 模块引用（动态导入后缓存） */
+let THREE: typeof import('three') | null = null;
+
+/** 占位宠物组 */
+let placeholderPetGroup: import('three').Group | null = null;
+
+/** 占位宠物身体材质 */
+let placeholderBodyMaterial: import('three').MeshPhongMaterial | null = null;
+
+/** 占位宠物左瞳孔 */
+let placeholderLeftPupil: import('three').Mesh | null = null;
+
+/** 占位宠物右瞳孔 */
+let placeholderRightPupil: import('three').Mesh | null = null;
+
+/** 占位宠物左眼白 */
+let placeholderLeftEyeWhite: import('three').Mesh | null = null;
+
+/** 占位宠物右眼白 */
+let placeholderRightEyeWhite: import('three').Mesh | null = null;
+
+/** 占位宠物微笑 */
+let placeholderSmile: import('three').Mesh | null = null;
+
+/** 占位宠物场景 */
+let placeholderScene: import('three').Scene | null = null;
+
+/** 占位宠物相机 */
+let placeholderCamera: import('three').PerspectiveCamera | null = null;
+
+// ============================================================
+// 点击穿透状态
+// ============================================================
+
+/** 当前是否启用点击穿透 */
+let isClickThroughEnabled = true;
+
+/** 上次更新穿透状态的时间（用于节流） */
+let lastClickThroughUpdateTime = 0;
+
+/** 穿透状态更新的节流间隔（毫秒） */
+const CLICK_THROUGH_THROTTLE_MS = 50;
+
+/** 射线检测器 */
+let raycaster: import('three').Raycaster | null = null;
+
+/** 当前占位宠物动画状态 */
+let currentPlaceholderAnimation: AnimationState = 'idle';
+
+/** 占位宠物动画时间 */
+let placeholderAnimationTime = 0;
+
+/** 占位宠物状态过渡进度 (0-1) */
+let placeholderTransitionProgress = 1;
+
+/** 占位宠物目标颜色 */
+let placeholderTargetColor = 0xff9eb5; // 默认粉色
+
+/** 占位宠物当前颜色 */
+let placeholderCurrentColor = 0xff9eb5;
+
+// ============================================================
 // Three.js 初始化
 // ============================================================
 
@@ -185,12 +273,19 @@ async function initThreeJS(): Promise<void> {
     throw new Error('您的浏览器不支持 WebGL，无法显示 3D 宠物');
   }
   
+  // 获取实际容器尺寸（使用 window.innerWidth/innerHeight 作为更可靠的后备）
+  // 窗口大小统一使用公共配置
+  const containerWidth = petContainer.clientWidth || window.innerWidth || PET_WINDOW_WIDTH;
+  const containerHeight = petContainer.clientHeight || window.innerHeight || PET_WINDOW_HEIGHT;
+  
+  console.log(`[Renderer] PetRenderer container size: ${containerWidth}x${containerHeight}`);
+  
   // 创建渲染器实例
   petRenderer = createPetRenderer(
     {
       container: petContainer,
-      width: petContainer.clientWidth || 300,
-      height: petContainer.clientHeight || 400,
+      width: containerWidth,
+      height: containerHeight,
       targetFPS: 30,
       antialias: true,
       enableShadows: false, // 透明窗口不需要阴影
@@ -282,32 +377,46 @@ async function loadPetModel(): Promise<void> {
 async function createPlaceholderPet(): Promise<void> {
   console.log('[Renderer] Creating placeholder pet...');
   
-  // 动态导入 Three.js（因为 PetRenderer 内部使用）
-  const THREE = await import('three');
+  // 动态导入 Three.js 并缓存到模块级变量
+  THREE = await import('three');
+  
+  // 获取实际容器尺寸（使用 window.innerWidth/innerHeight 作为更可靠的后备）
+  // 窗口大小统一使用公共配置
+  const containerWidth = petContainer.clientWidth || window.innerWidth || PET_WINDOW_WIDTH;
+  const containerHeight = petContainer.clientHeight || window.innerHeight || PET_WINDOW_HEIGHT;
+  
+  console.log(`[Renderer] Placeholder pet container size: ${containerWidth}x${containerHeight}`);
   
   // 获取渲染器内部的场景（需要通过反射访问）
   // 由于 PetRenderer 封装了内部实现，我们需要直接在容器中创建一个简单的场景
   
   // 创建一个简单的 Three.js 场景
   const scene = new THREE.Scene();
+  placeholderScene = scene;
   
-  // 创建相机
+  // 创建相机 - 使用实际容器尺寸计算宽高比
   const camera = new THREE.PerspectiveCamera(
     45,
-    (petContainer.clientWidth || 300) / (petContainer.clientHeight || 400),
+    containerWidth / containerHeight,
     0.1,
     1000
   );
   camera.position.set(0, 0, 5);
   camera.lookAt(0, 0, 0);
   
-  // 创建渲染器
+  // 保存相机引用到模块级变量（用于射线检测）
+  placeholderCamera = camera;
+  
+  // 初始化射线检测器
+  raycaster = new THREE.Raycaster();
+  
+  // 创建渲染器 - 使用实际容器尺寸
   const renderer = new THREE.WebGLRenderer({
     alpha: true,
     antialias: true,
   });
   renderer.setClearColor(0x000000, 0);
-  renderer.setSize(petContainer.clientWidth || 300, petContainer.clientHeight || 400);
+  renderer.setSize(containerWidth, containerHeight);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   
   // 清空容器并添加画布
@@ -317,6 +426,7 @@ async function createPlaceholderPet(): Promise<void> {
   
   // 创建可爱的占位宠物 - 一个带有眼睛的球体
   const petGroup = new THREE.Group();
+  placeholderPetGroup = petGroup;
   
   // 身体 - 粉色球体
   const bodyGeometry = new THREE.SphereGeometry(1, 32, 32);
@@ -325,6 +435,7 @@ async function createPlaceholderPet(): Promise<void> {
     shininess: 100,
     specular: 0xffffff,
   });
+  placeholderBodyMaterial = bodyMaterial;
   const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
   petGroup.add(body);
   
@@ -336,11 +447,13 @@ async function createPlaceholderPet(): Promise<void> {
   });
   const leftEyeWhite = new THREE.Mesh(eyeGeometry, eyeWhiteMaterial);
   leftEyeWhite.position.set(-0.35, 0.3, 0.8);
+  placeholderLeftEyeWhite = leftEyeWhite;
   petGroup.add(leftEyeWhite);
   
   // 右眼 - 白色球体
   const rightEyeWhite = new THREE.Mesh(eyeGeometry, eyeWhiteMaterial);
   rightEyeWhite.position.set(0.35, 0.3, 0.8);
+  placeholderRightEyeWhite = rightEyeWhite;
   petGroup.add(rightEyeWhite);
   
   // 左瞳孔 - 黑色球体
@@ -350,11 +463,13 @@ async function createPlaceholderPet(): Promise<void> {
   });
   const leftPupil = new THREE.Mesh(pupilGeometry, pupilMaterial);
   leftPupil.position.set(-0.35, 0.3, 0.95);
+  placeholderLeftPupil = leftPupil;
   petGroup.add(leftPupil);
   
   // 右瞳孔 - 黑色球体
   const rightPupil = new THREE.Mesh(pupilGeometry, pupilMaterial);
   rightPupil.position.set(0.35, 0.3, 0.95);
+  placeholderRightPupil = rightPupil;
   petGroup.add(rightPupil);
   
   // 腮红 - 红色椭圆
@@ -382,6 +497,7 @@ async function createPlaceholderPet(): Promise<void> {
   const smileGeometry = new THREE.TubeGeometry(smileCurve, 20, 0.03, 8, false);
   const smileMaterial = new THREE.MeshPhongMaterial({ color: 0x333333 });
   const smile = new THREE.Mesh(smileGeometry, smileMaterial);
+  placeholderSmile = smile;
   petGroup.add(smile);
   
   // 将宠物组添加到场景
@@ -399,27 +515,15 @@ async function createPlaceholderPet(): Promise<void> {
   fillLight.position.set(-5, 5, -5);
   scene.add(fillLight);
   
-  // 动画变量
-  let time = 0;
-  
   // 渲染循环
   function animate(): void {
     requestAnimationFrame(animate);
     
-    time += 0.016;
+    placeholderAnimationTime += 0.016;
+    const time = placeholderAnimationTime;
     
-    // 呼吸效果 - 轻微缩放
-    const breathScale = 1 + Math.sin(time * 2) * 0.03;
-    petGroup.scale.set(breathScale, breathScale, breathScale);
-    
-    // 轻微摇摆
-    petGroup.rotation.z = Math.sin(time * 1.5) * 0.05;
-    petGroup.rotation.y = Math.sin(time * 0.8) * 0.1;
-    
-    // 眼睛跟随效果（模拟看向某处）
-    const eyeOffset = Math.sin(time * 0.5) * 0.05;
-    leftPupil.position.x = -0.35 + eyeOffset;
-    rightPupil.position.x = 0.35 + eyeOffset;
+    // 根据当前动画状态应用不同效果
+    applyPlaceholderAnimationEffects(time);
     
     renderer.render(scene, camera);
   }
@@ -428,6 +532,285 @@ async function createPlaceholderPet(): Promise<void> {
   animate();
   
   console.log('[Renderer] Placeholder pet created successfully');
+}
+
+/**
+ * 应用占位宠物的动画效果
+ * 根据当前动画状态调整视觉表现
+ */
+function applyPlaceholderAnimationEffects(time: number): void {
+  if (!placeholderPetGroup || !placeholderBodyMaterial || !THREE) return;
+  
+  // 基础呼吸效果 - 所有状态都有
+  let breathScale = 1 + Math.sin(time * 2) * 0.03;
+  let rotationZ = Math.sin(time * 1.5) * 0.05;
+  let rotationY = Math.sin(time * 0.8) * 0.1;
+  let eyeOffsetX = Math.sin(time * 0.5) * 0.05;
+  let eyeOffsetY = 0;
+  let targetColor = 0xff9eb5; // 默认粉色
+  let bounceOffset = 0;
+  
+  // 根据动画状态调整效果
+  switch (currentPlaceholderAnimation) {
+    case 'happy':
+      // 开心：更亮的颜色，更大的摇摆，眼睛变大
+      targetColor = 0xffb6c8; // 更亮的粉色
+      breathScale = 1 + Math.sin(time * 3) * 0.08; // 更快的呼吸
+      rotationZ = Math.sin(time * 4) * 0.15; // 更大的摇摆
+      rotationY = Math.sin(time * 2) * 0.2;
+      // 眼睛放大效果
+      if (placeholderLeftEyeWhite && placeholderRightEyeWhite) {
+        const eyeScale = 1 + Math.sin(time * 5) * 0.1;
+        placeholderLeftEyeWhite.scale.setScalar(eyeScale);
+        placeholderRightEyeWhite.scale.setScalar(eyeScale);
+      }
+      break;
+      
+    case 'celebrating':
+      // 庆祝：跳动效果，闪烁颜色
+      targetColor = Math.sin(time * 8) > 0 ? 0xffb6c8 : 0xffd700; // 粉色和金色交替
+      bounceOffset = Math.abs(Math.sin(time * 6)) * 0.3; // 跳动
+      breathScale = 1 + Math.sin(time * 4) * 0.1;
+      rotationZ = Math.sin(time * 8) * 0.2;
+      rotationY = time * 2; // 旋转
+      break;
+      
+    case 'confused':
+      // 困惑：歪头，眼睛转动，变灰色
+      targetColor = 0xd0a0b0; // 偏灰的粉色
+      rotationZ = 0.3 + Math.sin(time * 2) * 0.1; // 歪头
+      eyeOffsetX = Math.sin(time * 3) * 0.15; // 眼睛快速转动
+      eyeOffsetY = Math.cos(time * 3) * 0.1;
+      break;
+      
+    case 'sad':
+      // 悲伤：低头，变暗，慢速呼吸
+      targetColor = 0xc08090; // 暗粉色
+      breathScale = 1 + Math.sin(time * 1) * 0.02; // 慢速小幅呼吸
+      rotationZ = Math.sin(time * 0.5) * 0.02;
+      // 眼睛朝下
+      eyeOffsetY = -0.1;
+      // 整体下垂
+      if (placeholderPetGroup) {
+        placeholderPetGroup.position.y = -0.1;
+      }
+      break;
+      
+    case 'thinking':
+      // 思考：眼睛朝上，轻微歪头
+      targetColor = 0xffa0b5;
+      rotationZ = 0.15;
+      eyeOffsetY = 0.1; // 眼睛朝上
+      eyeOffsetX = Math.sin(time * 0.3) * 0.05;
+      break;
+      
+    case 'sleepy':
+      // 困倦：慢速呼吸，眼睛变小
+      targetColor = 0xe8b0c0;
+      breathScale = 1 + Math.sin(time * 0.8) * 0.04;
+      rotationZ = Math.sin(time * 0.5) * 0.03;
+      // 眼睛变小（眯眼效果）
+      if (placeholderLeftEyeWhite && placeholderRightEyeWhite) {
+        placeholderLeftEyeWhite.scale.set(1, 0.3, 1);
+        placeholderRightEyeWhite.scale.set(1, 0.3, 1);
+      }
+      break;
+      
+    case 'curious':
+      // 好奇：眼睛放大，前倾
+      targetColor = 0xffb8c8;
+      rotationY = Math.sin(time * 1.5) * 0.3;
+      if (placeholderLeftEyeWhite && placeholderRightEyeWhite) {
+        placeholderLeftEyeWhite.scale.setScalar(1.2);
+        placeholderRightEyeWhite.scale.setScalar(1.2);
+      }
+      // 前倾
+      if (placeholderPetGroup) {
+        placeholderPetGroup.rotation.x = 0.1;
+      }
+      break;
+      
+    case 'listening':
+      // 聆听：轻微倾斜，专注
+      targetColor = 0xffc0d0;
+      rotationZ = 0.1;
+      breathScale = 1 + Math.sin(time * 1.5) * 0.02;
+      break;
+      
+    case 'drag':
+      // 拖拽：惊讶表情
+      targetColor = 0xffd0e0;
+      if (placeholderLeftEyeWhite && placeholderRightEyeWhite) {
+        placeholderLeftEyeWhite.scale.setScalar(1.3);
+        placeholderRightEyeWhite.scale.setScalar(1.3);
+      }
+      break;
+      
+    case 'idle':
+    default:
+      // 空闲：恢复正常
+      targetColor = 0xff9eb5;
+      if (placeholderLeftEyeWhite && placeholderRightEyeWhite) {
+        placeholderLeftEyeWhite.scale.setScalar(1);
+        placeholderRightEyeWhite.scale.setScalar(1);
+      }
+      if (placeholderPetGroup) {
+        placeholderPetGroup.position.y = 0;
+        placeholderPetGroup.rotation.x = 0;
+      }
+      break;
+  }
+  
+  // 应用位置和旋转
+  if (placeholderPetGroup) {
+    placeholderPetGroup.scale.set(breathScale, breathScale, breathScale);
+    placeholderPetGroup.rotation.z = rotationZ;
+    // 只在非特殊状态时设置 rotation.y（celebrating 有特殊处理）
+    if (currentPlaceholderAnimation !== 'celebrating') {
+      placeholderPetGroup.rotation.y = rotationY;
+    }
+    // 跳动效果
+    if (currentPlaceholderAnimation === 'celebrating') {
+      placeholderPetGroup.position.y = bounceOffset;
+    }
+  }
+  
+  // 应用眼睛位置
+  if (placeholderLeftPupil && placeholderRightPupil) {
+    placeholderLeftPupil.position.x = -0.35 + eyeOffsetX;
+    placeholderLeftPupil.position.y = 0.3 + eyeOffsetY;
+    placeholderRightPupil.position.x = 0.35 + eyeOffsetX;
+    placeholderRightPupil.position.y = 0.3 + eyeOffsetY;
+  }
+  
+  // 平滑颜色过渡
+  placeholderTargetColor = targetColor;
+  if (placeholderCurrentColor !== placeholderTargetColor) {
+    // 简单的颜色插值
+    const currentR = (placeholderCurrentColor >> 16) & 0xff;
+    const currentG = (placeholderCurrentColor >> 8) & 0xff;
+    const currentB = placeholderCurrentColor & 0xff;
+    const targetR = (placeholderTargetColor >> 16) & 0xff;
+    const targetG = (placeholderTargetColor >> 8) & 0xff;
+    const targetB = placeholderTargetColor & 0xff;
+    
+    const lerpFactor = 0.1;
+    const newR = Math.round(currentR + (targetR - currentR) * lerpFactor);
+    const newG = Math.round(currentG + (targetG - currentG) * lerpFactor);
+    const newB = Math.round(currentB + (targetB - currentB) * lerpFactor);
+    
+    placeholderCurrentColor = (newR << 16) | (newG << 8) | newB;
+    placeholderBodyMaterial.color.setHex(placeholderCurrentColor);
+  }
+}
+
+// ============================================================
+// 点击穿透检测函数
+// ============================================================
+
+/**
+ * 检测鼠标是否在宠物3D模型上
+ * 使用 Three.js Raycaster 进行射线检测
+ * @param clientX 鼠标相对于视口的 X 坐标
+ * @param clientY 鼠标相对于视口的 Y 坐标
+ * @returns 鼠标是否在宠物上
+ */
+function checkMouseOnPet(clientX: number, clientY: number): boolean {
+  // 如果使用占位宠物，使用占位宠物的场景和相机
+  if (usePlaceholderPet) {
+    if (!placeholderScene || !placeholderCamera || !raycaster || !placeholderPetGroup || !THREE) {
+      return false;
+    }
+    
+    // 获取实际容器尺寸
+    // 注意：使用 window.innerWidth/innerHeight 而非 clientWidth，因为容器可能尚未正确获取尺寸
+    const containerWidth = petContainer.clientWidth || window.innerWidth || PET_WINDOW_WIDTH;
+    const containerHeight = petContainer.clientHeight || window.innerHeight || PET_WINDOW_HEIGHT;
+    
+    // 调试日志：验证容器尺寸
+    // console.log(`[Renderer] Container size: ${containerWidth}x${containerHeight}, Mouse: (${clientX}, ${clientY})`);
+    
+    // 将鼠标坐标归一化到 [-1, 1] 范围
+    const mouse = new THREE.Vector2(
+      (clientX / containerWidth) * 2 - 1,
+      -(clientY / containerHeight) * 2 + 1
+    );
+    
+    // 设置射线
+    raycaster.setFromCamera(mouse, placeholderCamera);
+    
+    // 检测与宠物组中所有网格的交集
+    const intersects = raycaster.intersectObjects(placeholderPetGroup.children, true);
+    
+    return intersects.length > 0;
+  }
+  
+  // TODO: 如果使用真实模型，使用 PetRenderer 的射线检测
+  // 目前暂时返回 false（需要 PetRenderer 支持射线检测）
+  return false;
+}
+
+/**
+ * 更新点击穿透状态
+ * 根据鼠标是否在宠物上动态切换穿透状态
+ * @param clientX 鼠标相对于视口的 X 坐标
+ * @param clientY 鼠标相对于视口的 Y 坐标
+ */
+async function updateClickThrough(clientX: number, clientY: number): Promise<void> {
+  const api = getElectronAPI();
+  if (!api?.window?.setClickThrough) return;
+  
+  // 节流控制：避免频繁调用 IPC
+  const now = Date.now();
+  if (now - lastClickThroughUpdateTime < CLICK_THROUGH_THROTTLE_MS) {
+    return;
+  }
+  lastClickThroughUpdateTime = now;
+  
+  // 检测鼠标是否在宠物上
+  const isOnPet = checkMouseOnPet(clientX, clientY);
+  
+  // 如果状态没有变化，不需要更新
+  const shouldEnableClickThrough = !isOnPet;
+  if (shouldEnableClickThrough === isClickThroughEnabled) {
+    return;
+  }
+  
+  // 更新穿透状态
+  isClickThroughEnabled = shouldEnableClickThrough;
+  
+  try {
+    if (isClickThroughEnabled) {
+      // 鼠标不在宠物上，启用穿透（鼠标可以穿透到窗口后面）
+      await api.window.setClickThrough(true, { forward: true });
+    } else {
+      // 鼠标在宠物上，禁用穿透（可以与宠物交互）
+      await api.window.setClickThrough(false);
+    }
+  } catch (error) {
+    console.error('[Renderer] Failed to update click-through state:', error);
+  }
+}
+
+/**
+ * 设置占位宠物的动画状态
+ * @param animation 目标动画状态
+ */
+function setPlaceholderAnimation(animation: AnimationState): void {
+  console.log(`[Renderer] Setting placeholder animation: ${currentPlaceholderAnimation} -> ${animation}`);
+  
+  // 重置一些状态
+  if (placeholderLeftEyeWhite && placeholderRightEyeWhite) {
+    placeholderLeftEyeWhite.scale.setScalar(1);
+    placeholderRightEyeWhite.scale.setScalar(1);
+  }
+  if (placeholderPetGroup) {
+    placeholderPetGroup.position.y = 0;
+    placeholderPetGroup.rotation.x = 0;
+  }
+  
+  currentPlaceholderAnimation = animation;
+  placeholderTransitionProgress = 0;
 }
 
 /**
@@ -528,6 +911,13 @@ function cleanupIPCListeners(): void {
 function handlePetStateChange(state: PetState): void {
   console.log('[Renderer] Handling pet state change:', state.animation);
   
+  // 如果使用占位宠物，调用占位宠物的动画切换
+  if (usePlaceholderPet) {
+    console.log('[Renderer] Using placeholder pet, setting placeholder animation');
+    setPlaceholderAnimation(state.animation);
+    return;
+  }
+  
   // 如果渲染器可用，切换动画
   if (petRenderer && petRenderer.isInitialized()) {
     try {
@@ -578,6 +968,207 @@ async function loadInitialPetState(): Promise<void> {
 }
 
 // ============================================================
+// 鼠标事件处理
+// ============================================================
+
+/**
+ * 初始化鼠标事件监听器
+ * 实现窗口拖拽、点击响应等交互功能
+ */
+function initMouseEvents(): void {
+  const api = getElectronAPI();
+  
+  console.log('[Renderer] Initializing mouse events...');
+  
+  // 使用 document 监听事件，确保捕获所有鼠标操作
+  const targetElement = document;
+  
+  // --------------------------------------------------------
+  // 鼠标按下 - 开始拖拽准备
+  // --------------------------------------------------------
+  targetElement.addEventListener('mousedown', async (event: MouseEvent) => {
+    // 只响应左键
+    if (event.button !== 0) return;
+    
+    console.log('[Renderer] Mouse down at:', event.screenX, event.screenY);
+    
+    isDragging = true;
+    hasDragThresholdMet = false;
+    dragStartMouseX = event.screenX;
+    dragStartMouseY = event.screenY;
+    
+    // 获取当前窗口位置
+    if (api?.window?.getPosition) {
+      try {
+        const position = await api.window.getPosition();
+        dragStartWindowX = position.x;
+        dragStartWindowY = position.y;
+        console.log('[Renderer] Window position:', dragStartWindowX, dragStartWindowY);
+      } catch (error) {
+        console.error('[Renderer] Failed to get window position:', error);
+        isDragging = false;
+      }
+    } else {
+      console.warn('[Renderer] Window API not available for dragging');
+      isDragging = false;
+    }
+  });
+  
+  // --------------------------------------------------------
+  // 鼠标移动 - 拖拽窗口
+  // --------------------------------------------------------
+  targetElement.addEventListener('mousemove', async (event: MouseEvent) => {
+    if (!isDragging) return;
+    
+    // 计算鼠标移动距离
+    const deltaX = event.screenX - dragStartMouseX;
+    const deltaY = event.screenY - dragStartMouseY;
+    
+    // 检查是否超过拖拽阈值
+    if (!hasDragThresholdMet) {
+      const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+      if (distance < DRAG_THRESHOLD) {
+        return; // 未超过阈值，不视为拖拽
+      }
+      hasDragThresholdMet = true;
+      console.log('[Renderer] Drag threshold met, starting drag...');
+    }
+    
+    // 计算新窗口位置
+    const newX = dragStartWindowX + deltaX;
+    const newY = dragStartWindowY + deltaY;
+    
+    // 移动窗口
+    if (api?.window?.move) {
+      try {
+        await api.window.move(newX, newY);
+      } catch (error) {
+        console.error('[Renderer] Failed to move window:', error);
+      }
+    }
+  });
+  
+  // --------------------------------------------------------
+  // 鼠标松开 - 结束拖拽
+  // --------------------------------------------------------
+  targetElement.addEventListener('mouseup', async (event: MouseEvent) => {
+    // 只响应左键
+    if (event.button !== 0) return;
+    
+    const wasDragging = isDragging && hasDragThresholdMet;
+    isDragging = false;
+    
+    if (wasDragging) {
+      console.log('[Renderer] Drag ended');
+      
+      // 保存最终位置
+      if (api?.window?.getPosition && api?.pet?.savePosition) {
+        try {
+          const finalPosition = await api.window.getPosition();
+          await api.pet.savePosition({
+            x: finalPosition.x,
+            y: finalPosition.y,
+            monitor: finalPosition.monitor,
+          });
+          console.log('[Renderer] Position saved:', finalPosition);
+        } catch (error) {
+          console.error('[Renderer] Failed to save position:', error);
+        }
+      }
+      
+      // 拖动结束后，立即重新检测并更新点击穿透状态
+      // 这确保了如果鼠标已经移出宠物区域，穿透状态能正确恢复
+      await updateClickThrough(event.clientX, event.clientY);
+    }
+  });
+  
+  // --------------------------------------------------------
+  // 单击事件 - 宠物互动
+  // --------------------------------------------------------
+  targetElement.addEventListener('click', (event: MouseEvent) => {
+    // 如果刚完成拖拽，忽略此次点击
+    if (hasDragThresholdMet) {
+      hasDragThresholdMet = false;
+      return;
+    }
+    
+    console.log('[Renderer] Click detected at:', event.clientX, event.clientY);
+    
+    // 触发开心动画
+    if (api?.pet?.setAnimation) {
+      api.pet.setAnimation('happy', {
+        transitionDuration: 300,
+        loop: false,
+        nextState: 'idle',
+      }).catch((error) => {
+        console.error('[Renderer] Failed to set happy animation:', error);
+      });
+    }
+  });
+  
+  // --------------------------------------------------------
+  // 双击事件 - 特殊互动
+  // --------------------------------------------------------
+  targetElement.addEventListener('dblclick', (event: MouseEvent) => {
+    console.log('[Renderer] Double click detected at:', event.clientX, event.clientY);
+    
+    // 触发庆祝动画
+    if (api?.pet?.setAnimation) {
+      api.pet.setAnimation('celebrating', {
+        transitionDuration: 200,
+        loop: false,
+        nextState: 'idle',
+      }).catch((error) => {
+        console.error('[Renderer] Failed to set celebrating animation:', error);
+      });
+    }
+  });
+  
+  // --------------------------------------------------------
+  // 右键菜单 - 暂时阻止默认行为
+  // --------------------------------------------------------
+  targetElement.addEventListener('contextmenu', (event: MouseEvent) => {
+    event.preventDefault();
+    console.log('[Renderer] Right click detected at:', event.clientX, event.clientY);
+    
+    // 触发困惑动画
+    if (api?.pet?.setAnimation) {
+      api.pet.setAnimation('confused', {
+        transitionDuration: 300,
+        loop: false,
+        nextState: 'idle',
+      }).catch((error) => {
+        console.error('[Renderer] Failed to set confused animation:', error);
+      });
+    }
+  });
+  
+  // --------------------------------------------------------
+  // 鼠标离开窗口 - 取消拖拽
+  // --------------------------------------------------------
+  document.addEventListener('mouseleave', () => {
+    if (isDragging) {
+      console.log('[Renderer] Mouse left window, canceling drag');
+      isDragging = false;
+      hasDragThresholdMet = false;
+    }
+  });
+  
+  // --------------------------------------------------------
+  // 全局鼠标移动 - 动态切换点击穿透状态
+  // --------------------------------------------------------
+  document.addEventListener('mousemove', (event: MouseEvent) => {
+    // 拖拽时不更新穿透状态（保持可交互）
+    if (isDragging) return;
+    
+    // 更新点击穿透状态
+    updateClickThrough(event.clientX, event.clientY);
+  });
+  
+  console.log('[Renderer] Mouse events initialized');
+}
+
+// ============================================================
 // 应用初始化
 // ============================================================
 
@@ -602,10 +1193,13 @@ async function init(): Promise<void> {
     // 4. 加载初始宠物状态
     await loadInitialPetState();
     
-    // 5. 启动渲染循环
+    // 5. 初始化鼠标事件
+    initMouseEvents();
+    
+    // 6. 启动渲染循环
     startRenderLoop();
     
-    // 6. 隐藏加载状态
+    // 7. 隐藏加载状态
     hideLoading();
     
     console.log('[Renderer] Initialization complete');

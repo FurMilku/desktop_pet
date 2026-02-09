@@ -22,12 +22,22 @@ import { getGlobalCapabilityRegistry } from '../shared/services/capability-regis
 // IPC 处理器
 import { registerPetHandlers, unregisterPetHandlers } from './ipc/pet-handler';
 import { registerAIHandlers, unregisterAIHandlers } from './ipc/ai-handler';
+import { registerWindowHandlers, unregisterWindowHandlers } from './ipc/window-handler';
+
+// 窗口管理器
+import { getWindowManager } from './window-manager';
 
 // AI 服务
 import { initializeAIService, shutdownAIService } from './ai-service';
 
+// 系统托盘
+import { initializeTray, destroyTray } from './tray-manager';
+
 // 类型导入
 import { EventTypes, AppReadyPayload } from '../shared/types/events';
+
+// 窗口尺寸配置
+import { PET_WINDOW_WIDTH, PET_WINDOW_HEIGHT } from '../shared/config/pet-window';
 
 // ============================================================================
 // 常量定义
@@ -189,6 +199,9 @@ function initializeIpcHandlers(): void {
   // 注册 AI IPC 处理器
   registerAIHandlers();
   
+  // 注册 Window IPC 处理器（用于窗口拖拽、移动等）
+  registerWindowHandlers();
+  
   // TODO: T022 实现后在此引入其他 IPC 处理器
   // import { registerSystemHandlers } from './ipc/system-handler';
   // registerSystemHandlers();
@@ -224,45 +237,51 @@ function initializeErrorTracking(): void {
 
 /**
  * 创建主窗口
- * 注意：T027 将实现完整的 WindowManager，此处为基础实现
+ * 使用 WindowManager 创建和管理窗口
  */
 async function createMainWindow(): Promise<void> {
-  logger.info('Creating main window...');
+  logger.info('Creating main window via WindowManager...');
   
-  // 窗口配置 - 透明无边框窗口
-  mainWindow = new BrowserWindow({
-    width: 150,
-    height: 200,
-    x: 100,
-    y: 100,
-    transparent: true,        // 透明背景
-    frame: false,             // 无边框
-    resizable: false,         // 不可调整大小
-    alwaysOnTop: true,        // 始终置顶
-    skipTaskbar: true,        // 不显示在任务栏
-    hasShadow: false,         // 无阴影
-    webPreferences: {
-      preload: PRELOAD_SCRIPT,
-      contextIsolation: true,           // 启用上下文隔离
-      nodeIntegration: false,           // 禁用 Node 集成
-      sandbox: true,                    // 启用沙盒
-      webSecurity: true,                // 启用 Web 安全
-      allowRunningInsecureContent: false,
-    },
-    show: false, // 先隐藏，等待内容加载完成
+  // 获取 WindowManager 实例并初始化
+  const windowManager = getWindowManager();
+  await windowManager.initialize();
+  
+  // 使用 WindowManager 创建窗口（使用公共配置的尺寸）
+  await windowManager.createMainWindow({
+    width: PET_WINDOW_WIDTH,
+    height: PET_WINDOW_HEIGHT,
+    transparent: true,
+    frameless: true,
+    alwaysOnTop: true,
+    clickThrough: false,
   });
   
+  // 获取创建的窗口实例
+  mainWindow = windowManager.getWindow();
+  
+  if (!mainWindow) {
+    throw new Error('Failed to create main window');
+  }
+  
   // 设置窗口可穿透点击（透明区域）
-  mainWindow.setIgnoreMouseEvents(false);
+  // 启用穿透模式，forward: true 使窗口仍能接收鼠标位置信息
+  // 渲染器会根据鼠标是否在宠物上动态切换穿透状态
+  mainWindow.setIgnoreMouseEvents(true, { forward: true });
   
   // 加载渲染进程
   if (isDev) {
     await mainWindow.loadURL(RENDERER_ENTRY);
-    // 开发模式下打开开发者工具
-    mainWindow.webContents.openDevTools({ mode: 'detach' });
   } else {
     await mainWindow.loadFile(RENDERER_ENTRY);
   }
+  
+  // 始终打开开发者工具以便调试（分离模式获得更大窗口）
+  // TODO: 调试完成后可以改回仅在开发模式下打开
+  mainWindow.webContents.openDevTools({ 
+    mode: 'detach',  // 分离模式，独立窗口
+    activate: true,  // 激活窗口
+  });
+  logger.info('DevTools opened for debugging');
   
   // 内容加载完成后显示窗口
   mainWindow.once('ready-to-show', () => {
@@ -304,7 +323,7 @@ async function createMainWindow(): Promise<void> {
     }
   });
   
-  logger.info('Main window created');
+  logger.info('Main window created via WindowManager');
 }
 
 /**
@@ -369,6 +388,13 @@ async function onAppReady(): Promise<void> {
     
     // 创建主窗口
     await createMainWindow();
+    
+    // 初始化系统托盘（在窗口创建后）
+    initializeTray({
+      tooltip: '桌面3D小宠物',
+      showOnClick: true,
+    });
+    logger.info('System tray initialized');
     
     // 标记应用就绪
     isAppReady = true;
@@ -454,7 +480,12 @@ function onWillQuit(_event: Electron.Event): void {
     // 注销 IPC 处理器
     unregisterPetHandlers();
     unregisterAIHandlers();
+    unregisterWindowHandlers();
     logger.info('IPC handlers unregistered');
+    
+    // 销毁系统托盘
+    destroyTray();
+    logger.info('System tray destroyed');
     
     // 关闭 AI 服务（异步，但在退出时不等待）
     shutdownAIService().catch((error) => {

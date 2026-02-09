@@ -35,6 +35,11 @@
       position: absolute;
       top: 0;
       left: 0;
+      /* 完全透明背景，配合 setIgnoreMouseEvents(true, { forward: true }) */
+      /* 渲染器会动态检测鼠标是否在宠物上，切换穿透状态 */
+      background: transparent;
+      /* 确保鼠标事件不会被阻止 */
+      pointer-events: auto;
     }
     
     /* 加载状态 */
