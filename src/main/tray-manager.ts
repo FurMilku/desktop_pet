@@ -23,6 +23,7 @@ import { ipcLogger } from './logger';
 import { EventBus, getGlobalEventBus } from '../shared/services/event-bus';
 import { EventTypes } from '../shared/types/events';
 import { dialog } from 'electron';
+import { quitApplication } from './app-quit';
 
 // ============================================================================
 // Types
@@ -527,7 +528,7 @@ export class TrayManager {
         break;
 
       case TrayMenuIds.QUIT:
-        app.quit();
+        void quitApplication();
         break;
 
       default:

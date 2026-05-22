@@ -126,6 +126,18 @@ const DEFAULT_CONFIG: MenuConfig = {
 // ============================================================
 
 const MENU_STYLES = `
+.pet-context-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--menu-z-index, 10000) - 1);
+  pointer-events: none;
+  background: transparent;
+}
+
+.pet-context-menu-backdrop.open {
+  pointer-events: auto;
+}
+
 .pet-context-menu {
   position: fixed;
   min-width: var(--menu-min-width, 180px);
@@ -180,6 +192,7 @@ const MENU_STYLES = `
   cursor: pointer;
   transition: background-color 100ms ease;
   gap: 10px;
+  position: relative;
 }
 
 .pet-context-menu-item:hover:not(.disabled):not(.separator) {
@@ -211,6 +224,7 @@ const MENU_STYLES = `
 
 .pet-context-menu-item-label {
   flex: 1;
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -243,23 +257,78 @@ const MENU_STYLES = `
 
 .pet-context-menu-submenu {
   position: absolute;
-  left: 100%;
+  left: calc(100% - 6px);
   top: -6px;
   min-width: var(--menu-min-width, 180px);
+  max-width: min(92vw, 420px);
+  max-height: min(70vh, 480px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: var(--menu-separator, #e8e8e8) transparent;
   background: var(--menu-bg, #ffffff);
   border: 1px solid var(--menu-border, #e0e0e0);
   border-radius: 8px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
   padding: 6px 0;
   opacity: 0;
-  transform: translateX(-10px);
-  transition: opacity 150ms ease, transform 150ms ease;
+  visibility: hidden;
+  transform: translateX(-6px);
+  transition: opacity 150ms ease, transform 150ms ease, visibility 0s linear 150ms;
   pointer-events: none;
+  z-index: 1;
 }
 
-.pet-context-menu-item.has-submenu:hover .pet-context-menu-submenu {
+.pet-context-menu-submenu::-webkit-scrollbar {
+  width: 8px;
+}
+
+.pet-context-menu-submenu::-webkit-scrollbar-thumb {
+  background: var(--menu-separator, #e8e8e8);
+  border-radius: 4px;
+}
+
+/* 动画列表：按最长剪辑名撑开宽度，完整显示 GLB 原名 */
+.pet-context-menu-submenu--animations {
+  width: max-content;
+  min-width: max(var(--menu-min-width, 200px), 100%);
+  max-width: min(96vw, 960px);
+  overflow-x: auto;
+  overflow-y: auto;
+}
+
+.pet-context-menu-submenu--animations .pet-context-menu-item {
+  width: max-content;
+  min-width: 100%;
+  box-sizing: border-box;
+}
+
+.pet-context-menu-submenu--animations .pet-context-menu-item-label {
+  flex: 0 1 auto;
+  min-width: max-content;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: nowrap;
+}
+
+.pet-context-menu-item.has-submenu:hover > .pet-context-menu-submenu,
+.pet-context-menu-submenu:hover {
   opacity: 1;
+  visibility: visible;
   transform: translateX(0);
+  transition: opacity 150ms ease, transform 150ms ease, visibility 0s;
+  pointer-events: auto;
+}
+
+.pet-context-menu-item.has-submenu::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: -10px;
+  width: 14px;
+  height: 100%;
   pointer-events: auto;
 }
 `;
@@ -283,6 +352,7 @@ export class ContextMenu implements IContextMenu {
   // DOM 元素
   private _container: HTMLElement | null = null;
   private _menuElement: HTMLElement | null = null;
+  private _backdropElement: HTMLElement | null = null;
   private _styleElement: HTMLStyleElement | null = null;
   
   // 事件处理函数引用
@@ -351,6 +421,9 @@ export class ContextMenu implements IContextMenu {
     // 移除菜单元素
     if (this._menuElement && this._menuElement.parentNode) {
       this._menuElement.parentNode.removeChild(this._menuElement);
+    }
+    if (this._backdropElement && this._backdropElement.parentNode) {
+      this._backdropElement.parentNode.removeChild(this._backdropElement);
     }
     
     // 移除样式
@@ -421,6 +494,7 @@ export class ContextMenu implements IContextMenu {
     this._menuElement.style.top = `${position.y}px`;
 
     // 显示菜单
+    this._backdropElement?.classList.add('open');
     this._menuElement.classList.add('open');
     this._isOpen = true;
 
@@ -438,6 +512,7 @@ export class ContextMenu implements IContextMenu {
       return;
     }
 
+    this._backdropElement?.classList.remove('open');
     this._menuElement.classList.remove('open');
     this._isOpen = false;
 
@@ -519,9 +594,19 @@ export class ContextMenu implements IContextMenu {
    * 创建菜单元素
    */
   private _createMenuElement(): void {
+    this._backdropElement = document.createElement('div');
+    this._backdropElement.className = 'pet-context-menu-backdrop';
+    this._backdropElement.addEventListener('mousedown', (e) => {
+      e.stopPropagation();
+      if (this._isOpen) {
+        this.hide();
+      }
+    });
+
     this._menuElement = document.createElement('div');
     this._menuElement.className = 'pet-context-menu';
     this._applyConfig();
+    this._container?.appendChild(this._backdropElement);
     this._container?.appendChild(this._menuElement);
   }
 
@@ -584,6 +669,8 @@ export class ContextMenu implements IContextMenu {
       return element;
     }
 
+    const isAnimationClipItem = item.id.startsWith('clip-');
+
     // 禁用状态
     if (item.disabled) {
       element.classList.add('disabled');
@@ -595,7 +682,7 @@ export class ContextMenu implements IContextMenu {
     }
 
     // 图标
-    if (this._config.showIcons) {
+    if (this._config.showIcons && !isAnimationClipItem) {
       const iconEl = document.createElement('span');
       iconEl.className = 'pet-context-menu-item-icon';
       if (item.icon) {
@@ -616,6 +703,9 @@ export class ContextMenu implements IContextMenu {
     const labelEl = document.createElement('span');
     labelEl.className = 'pet-context-menu-item-label';
     labelEl.textContent = item.label || '';
+    if (item.label) {
+      labelEl.title = item.label;
+    }
     element.appendChild(labelEl);
 
     // 快捷键
@@ -637,6 +727,12 @@ export class ContextMenu implements IContextMenu {
       if (item.submenu) {
         const submenuEl = document.createElement('div');
         submenuEl.className = 'pet-context-menu-submenu';
+        if (item.id === 'animations') {
+          submenuEl.classList.add('pet-context-menu-submenu--animations');
+        }
+        submenuEl.addEventListener('mousedown', (e) => e.stopPropagation());
+        submenuEl.addEventListener('click', (e) => e.stopPropagation());
+        submenuEl.addEventListener('wheel', (e) => e.stopPropagation(), { passive: true });
         for (const subItem of item.submenu) {
           submenuEl.appendChild(this._createMenuItemElement(subItem));
         }
@@ -644,12 +740,17 @@ export class ContextMenu implements IContextMenu {
       }
     }
 
-    // 点击事件
-    if (!item.disabled && item.type !== 'separator') {
-      element.addEventListener('click', (e) => {
+    // 激活菜单项（用 mousedown：透明窗口下 click 可能丢失）
+    if (!item.disabled && item.type !== 'separator' && item.type !== 'submenu') {
+      const activate = (e: MouseEvent): void => {
+        if (e.button !== 0) {
+          return;
+        }
+        e.preventDefault();
         e.stopPropagation();
         this._handleItemClick(item);
-      });
+      };
+      element.addEventListener('mousedown', activate);
 
       // 悬停事件
       element.addEventListener('mouseenter', () => {
@@ -898,42 +999,57 @@ export function createDefaultPetMenu(callbacks: {
   onAbout?: () => void;
   onMute?: (muted: boolean) => void;
   onAlwaysOnTop?: (alwaysOnTop: boolean) => void;
+  onShowWindowFrame?: (showFrame: boolean) => void;
+  onPlayAnimation?: (menuId: string) => void;
   onQuit?: () => void;
+  /** 模型加载后的可播放动画（为空时显示占位项） */
+  menuAnimations?: Array<{ id: string; label: string }>;
 }): MenuItem[] {
+  const animationItems: MenuItem[] =
+    callbacks.menuAnimations && callbacks.menuAnimations.length > 0
+      ? callbacks.menuAnimations.map((anim) =>
+          createMenuItem(anim.id, anim.label, {
+            click: () => callbacks.onPlayAnimation?.(anim.id),
+          })
+        )
+      : [
+          createMenuItem('anim-none', '（暂无可用动画）', {
+            disabled: true,
+          }),
+        ];
   return [
-    createMenuItem('chat', '💬 对话', {
+    createMenuItem('chat', '对话', {
       icon: '💬',
       accelerator: 'Ctrl+Enter',
       click: () => callbacks.onChat?.(),
     }),
     createSeparator(),
-    createCheckboxItem('alwaysOnTop', '📌 置顶显示', true, {
+    createCheckboxItem('alwaysOnTop', '置顶显示', true, {
       icon: '📌',
       click: (item) => callbacks.onAlwaysOnTop?.(item.checked ?? false),
     }),
-    createCheckboxItem('mute', '🔇 静音', false, {
+    createCheckboxItem('mute', '静音', false, {
       icon: '🔇',
       click: (item) => callbacks.onMute?.(item.checked ?? false),
     }),
+    createCheckboxItem('showWindowFrame', '显示窗口边缘', false, {
+      icon: '⬜',
+      click: (item) => callbacks.onShowWindowFrame?.(item.checked ?? false),
+    }),
     createSeparator(),
-    createSubmenu('animations', '🎭 动画', [
-      createMenuItem('anim-idle', '😊 待机', { icon: '😊' }),
-      createMenuItem('anim-happy', '😄 开心', { icon: '😄' }),
-      createMenuItem('anim-thinking', '🤔 思考', { icon: '🤔' }),
-      createMenuItem('anim-sleepy', '😴 瞌睡', { icon: '😴' }),
-    ], { icon: '🎭' }),
+    createSubmenu('animations', '动画', animationItems, { icon: '🎭' }),
     createSeparator(),
-    createMenuItem('settings', '⚙️ 设置', {
+    createMenuItem('settings', '设置', {
       icon: '⚙️',
       accelerator: 'Ctrl+,',
       click: () => callbacks.onSettings?.(),
     }),
-    createMenuItem('about', 'ℹ️ 关于', {
+    createMenuItem('about', '关于', {
       icon: 'ℹ️',
       click: () => callbacks.onAbout?.(),
     }),
     createSeparator(),
-    createMenuItem('quit', '❌ 退出', {
+    createMenuItem('quit', '退出', {
       icon: '❌',
       accelerator: 'Ctrl+Q',
       click: () => callbacks.onQuit?.(),

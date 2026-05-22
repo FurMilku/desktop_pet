@@ -19,10 +19,11 @@ files:
 
 # 额外资源（不参与 ASAR 打包）
 extraResources:
-  - from: "src/assets"
-    to: "assets"
+  - from: "assets/models"
+    to: "models"
     filter:
-      - "**/*"
+      - "**/*.glb"
+      - "**/*.gltf"
 
 # ASAR 打包配置
 asar: true

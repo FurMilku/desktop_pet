@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "modelScale": 1,
+  "modelBrightness": 1,
+  "sourceAnimationFps": 120,
+  "playbackSpeed": 1,
+  "clickAnimation": {
+    "pool": [],
+    "activeSequenceId": null
+  }
+}

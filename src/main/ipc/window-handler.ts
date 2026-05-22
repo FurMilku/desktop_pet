@@ -22,6 +22,7 @@ const logger = getLogger('window-handler');
  */
 export const WindowChannels = {
   MOVE: 'window:move',
+  RESIZE: 'window:resize',
   GET_POSITION: 'window:get-position',
   SET_ALWAYS_ON_TOP: 'window:set-always-on-top',
   MINIMIZE: 'window:minimize',
@@ -33,6 +34,8 @@ export const WindowChannels = {
   RESTORE: 'window:restore',
   SAVE_POSITION: 'window:save-position',
   GET_STATE: 'window:get-state',
+  SET_RESIZE_FRAME: 'window:set-resize-frame',
+  GET_RESIZE_FRAME: 'window:get-resize-frame',
 } as const;
 
 // ============================================================================
@@ -66,6 +69,7 @@ export interface WindowStateResponse {
   isAlwaysOnTop: boolean;
   position: WindowPositionResponse;
   size: { width: number; height: number };
+  resizeFrameEnabled: boolean;
 }
 
 // ============================================================================
@@ -80,6 +84,9 @@ export function registerWindowHandlers(): void {
 
   // 移动窗口
   ipcMain.handle(WindowChannels.MOVE, handleMove);
+
+  // 调整窗口尺寸
+  ipcMain.handle(WindowChannels.RESIZE, handleResize);
 
   // 获取窗口位置
   ipcMain.handle(WindowChannels.GET_POSITION, handleGetPosition);
@@ -114,6 +121,10 @@ export function registerWindowHandlers(): void {
   // 获取窗口状态
   ipcMain.handle(WindowChannels.GET_STATE, handleGetState);
 
+  ipcMain.handle(WindowChannels.SET_RESIZE_FRAME, handleSetResizeFrame);
+
+  ipcMain.handle(WindowChannels.GET_RESIZE_FRAME, handleGetResizeFrame);
+
   logger.info('Window IPC handlers registered');
 }
 
@@ -124,6 +135,7 @@ export function unregisterWindowHandlers(): void {
   logger.info('Unregistering Window IPC handlers');
 
   ipcMain.removeHandler(WindowChannels.MOVE);
+  ipcMain.removeHandler(WindowChannels.RESIZE);
   ipcMain.removeHandler(WindowChannels.GET_POSITION);
   ipcMain.removeHandler(WindowChannels.SET_ALWAYS_ON_TOP);
   ipcMain.removeHandler(WindowChannels.MINIMIZE);
@@ -135,6 +147,8 @@ export function unregisterWindowHandlers(): void {
   ipcMain.removeHandler(WindowChannels.RESTORE);
   ipcMain.removeHandler(WindowChannels.SAVE_POSITION);
   ipcMain.removeHandler(WindowChannels.GET_STATE);
+  ipcMain.removeHandler(WindowChannels.SET_RESIZE_FRAME);
+  ipcMain.removeHandler(WindowChannels.GET_RESIZE_FRAME);
 
   logger.info('Window IPC handlers unregistered');
 }
@@ -168,6 +182,31 @@ async function handleMove(
   } catch (error) {
     logger.error('Failed to move window', error);
     throw createIPCError('ERR_INTERNAL', `Failed to move window: ${error}`);
+  }
+}
+
+/**
+ * 处理窗口尺寸调整请求
+ */
+async function handleResize(
+  _event: IpcMainInvokeEvent,
+  width: number,
+  height: number,
+  options?: { anchor?: 'center' | 'top-left' }
+): Promise<void> {
+  try {
+    if (typeof width !== 'number' || typeof height !== 'number') {
+      throw new Error('Invalid size parameters');
+    }
+    if (!Number.isFinite(width) || !Number.isFinite(height)) {
+      throw new Error('Size must be finite numbers');
+    }
+
+    const windowManager = getWindowManager();
+    windowManager.resizeTo(width, height, options);
+  } catch (error) {
+    logger.error('Failed to resize window', error);
+    throw createIPCError('ERR_INTERNAL', `Failed to resize window: ${error}`);
   }
 }
 
@@ -388,10 +427,41 @@ async function handleGetState(
         monitor: state.position.monitorId,
       },
       size: { ...state.size },
+      resizeFrameEnabled: state.resizeFrameEnabled,
     };
   } catch (error) {
     logger.error('Failed to get window state', error);
     throw createIPCError('ERR_INTERNAL', `Failed to get window state: ${error}`);
+  }
+}
+
+/**
+ * 处理显示窗口边缘 / 可调整大小模式
+ */
+async function handleSetResizeFrame(
+  _event: IpcMainInvokeEvent,
+  enabled: boolean
+): Promise<void> {
+  try {
+    if (typeof enabled !== 'boolean') {
+      throw new Error('enabled must be a boolean');
+    }
+    getWindowManager().setResizeFrameEnabled(enabled);
+  } catch (error) {
+    logger.error('Failed to set resize frame', error);
+    throw createIPCError('ERR_INTERNAL', `Failed to set resize frame: ${error}`);
+  }
+}
+
+/**
+ * 获取是否处于可调整大小模式
+ */
+async function handleGetResizeFrame(_event: IpcMainInvokeEvent): Promise<boolean> {
+  try {
+    return getWindowManager().isResizeFrameEnabled();
+  } catch (error) {
+    logger.error('Failed to get resize frame state', error);
+    throw createIPCError('ERR_INTERNAL', `Failed to get resize frame state: ${error}`);
   }
 }
 

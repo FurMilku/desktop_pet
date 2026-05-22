@@ -9,6 +9,12 @@
 import { BrowserWindow, screen, Display, app } from 'electron';
 import * as path from 'path';
 import { DatabaseService, getGlobalDatabaseService } from '../shared/services/database';
+import {
+  PET_WINDOW_MIN_WIDTH,
+  PET_WINDOW_MIN_HEIGHT,
+  PET_WINDOW_MAX_WIDTH,
+  PET_WINDOW_MAX_HEIGHT,
+} from '../shared/config/pet-window';
 import { getLogger } from './logger';
 
 const logger = getLogger('window-manager');
@@ -87,6 +93,8 @@ export interface WindowState {
   position: WindowPosition;
   /** 窗口尺寸 */
   size: { width: number; height: number };
+  /** 是否显示边缘并可拖拽调整大小 */
+  resizeFrameEnabled: boolean;
 }
 
 /**
@@ -99,9 +107,16 @@ export interface IWindowManager {
   getWindowState(): WindowState;
   moveTo(x: number, y: number): void;
   moveBy(deltaX: number, deltaY: number): void;
+  resizeTo(
+    width: number,
+    height: number,
+    options?: { anchor?: 'center' | 'top-left' }
+  ): void;
   setAlwaysOnTop(alwaysOnTop: boolean): void;
   setOpacity(opacity: number): void;
   setClickThrough(enable: boolean, options?: { forward?: boolean }): void;
+  setResizeFrameEnabled(enabled: boolean): void;
+  isResizeFrameEnabled(): boolean;
   show(): void;
   hide(): void;
   minimizeToTray(): void;
@@ -132,6 +147,27 @@ const DEFAULT_WINDOW_OPTIONS: Required<Omit<WindowOptions, 'position'>> & { posi
 
 const POSITION_STORAGE_KEY = 'pet_window_position';
 
+/** 从数据库读取的窗口布局（位置 + 可选尺寸） */
+interface SavedWindowLayout {
+  x: number;
+  y: number;
+  monitorId: number;
+  width?: number;
+  height?: number;
+}
+
+function clampWindowDimension(
+  value: number | undefined,
+  min: number,
+  max: number,
+  fallback: number
+): number {
+  if (value === undefined || !Number.isFinite(value)) {
+    return fallback;
+  }
+  return Math.max(min, Math.min(max, Math.round(value)));
+}
+
 // ============================================================================
 // 窗口管理器实现
 // ============================================================================
@@ -147,6 +183,7 @@ export class WindowManager implements IWindowManager {
   private displayCallbacks: Set<(displays: DisplayInfo[]) => void> = new Set();
   private currentState: WindowState;
   private displayChangeHandler: (() => void) | null = null;
+  private layoutSaveTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor() {
     // 初始化默认状态
@@ -156,6 +193,7 @@ export class WindowManager implements IWindowManager {
       isAlwaysOnTop: true,
       position: { x: 100, y: 100, monitorId: 0 },
       size: { width: DEFAULT_WINDOW_OPTIONS.width, height: DEFAULT_WINDOW_OPTIONS.height },
+      resizeFrameEnabled: false,
     };
   }
 
@@ -197,6 +235,11 @@ export class WindowManager implements IWindowManager {
    * 销毁窗口管理器
    */
   dispose(): void {
+    if (this.layoutSaveTimer !== null) {
+      clearTimeout(this.layoutSaveTimer);
+      this.layoutSaveTimer = null;
+    }
+
     // 移除显示器变化监听
     if (this.displayChangeHandler) {
       screen.removeListener('display-added', this.displayChangeHandler);
@@ -237,19 +280,40 @@ export class WindowManager implements IWindowManager {
       ...options,
     };
 
+    const savedLayout = this.loadSavedWindowLayout();
+
+    let initialWidth = mergedOptions.width;
+    let initialHeight = mergedOptions.height;
+    if (savedLayout?.width !== undefined && savedLayout?.height !== undefined) {
+      initialWidth = clampWindowDimension(
+        savedLayout.width,
+        PET_WINDOW_MIN_WIDTH,
+        PET_WINDOW_MAX_WIDTH,
+        mergedOptions.width
+      );
+      initialHeight = clampWindowDimension(
+        savedLayout.height,
+        PET_WINDOW_MIN_HEIGHT,
+        PET_WINDOW_MAX_HEIGHT,
+        mergedOptions.height
+      );
+    }
+
     // 获取初始位置
     let initialPosition = mergedOptions.position;
     if (!initialPosition) {
-      // 尝试从存储恢复位置
-      const restored = await this.loadSavedPosition();
-      if (restored) {
-        initialPosition = restored;
+      if (savedLayout) {
+        initialPosition = {
+          x: savedLayout.x,
+          y: savedLayout.y,
+          monitorId: savedLayout.monitorId,
+        };
       } else {
         // 使用默认位置（主显示器中央偏右下）
         const primaryDisplay = screen.getPrimaryDisplay();
         initialPosition = {
-          x: primaryDisplay.workArea.x + primaryDisplay.workArea.width - mergedOptions.width - 100,
-          y: primaryDisplay.workArea.y + primaryDisplay.workArea.height - mergedOptions.height - 100,
+          x: primaryDisplay.workArea.x + primaryDisplay.workArea.width - initialWidth - 100,
+          y: primaryDisplay.workArea.y + primaryDisplay.workArea.height - initialHeight - 100,
           monitorId: primaryDisplay.id,
         };
       }
@@ -257,8 +321,8 @@ export class WindowManager implements IWindowManager {
 
     // 创建 BrowserWindow
     this.window = new BrowserWindow({
-      width: mergedOptions.width,
-      height: mergedOptions.height,
+      width: initialWidth,
+      height: initialHeight,
       x: initialPosition.x,
       y: initialPosition.y,
       transparent: mergedOptions.transparent,
@@ -266,6 +330,7 @@ export class WindowManager implements IWindowManager {
       alwaysOnTop: mergedOptions.alwaysOnTop,
       skipTaskbar: true, // 不在任务栏显示
       resizable: false,
+      thickFrame: process.platform === 'win32',
       hasShadow: false,
       webPreferences: {
         preload: this.getPreloadPath(),
@@ -291,7 +356,8 @@ export class WindowManager implements IWindowManager {
       isMinimized: false,
       isAlwaysOnTop: mergedOptions.alwaysOnTop,
       position: initialPosition,
-      size: { width: mergedOptions.width, height: mergedOptions.height },
+      size: { width: initialWidth, height: initialHeight },
+      resizeFrameEnabled: false,
     };
 
     // 监听窗口事件
@@ -299,7 +365,7 @@ export class WindowManager implements IWindowManager {
 
     logger.info('Main window created', {
       position: initialPosition,
-      size: { width: mergedOptions.width, height: mergedOptions.height },
+      size: { width: initialWidth, height: initialHeight },
     });
   }
 
@@ -316,6 +382,7 @@ export class WindowManager implements IWindowManager {
       const currentDisplay = this.getCurrentDisplay();
 
       this.currentState = {
+        ...this.currentState,
         isVisible: this.window.isVisible(),
         isMinimized: this.window.isMinimized(),
         isAlwaysOnTop: this.window.isAlwaysOnTop(),
@@ -383,6 +450,47 @@ export class WindowManager implements IWindowManager {
     this.moveTo(currentPosition[0] + deltaX, currentPosition[1] + deltaY);
   }
 
+  /**
+   * 调整窗口尺寸；anchor=center 时保持窗口中心不动
+   */
+  resizeTo(
+    width: number,
+    height: number,
+    options: { anchor?: 'center' | 'top-left' } = {}
+  ): void {
+    if (!this.window || this.window.isDestroyed()) {
+      logger.warn('Cannot resize: window not available');
+      return;
+    }
+
+    const anchor = options.anchor ?? 'center';
+    const newWidth = Math.max(50, Math.round(width));
+    const newHeight = Math.max(50, Math.round(height));
+    const [x, y] = this.window.getPosition();
+    const [oldWidth, oldHeight] = this.window.getSize();
+
+    let newX = x;
+    let newY = y;
+    if (anchor === 'center') {
+      newX = x + Math.round((oldWidth - newWidth) / 2);
+      newY = y + Math.round((oldHeight - newHeight) / 2);
+    }
+
+    this.window.setBounds({ x: newX, y: newY, width: newWidth, height: newHeight });
+    this.currentState.size = { width: newWidth, height: newHeight };
+    this.currentState.position = {
+      x: newX,
+      y: newY,
+      monitorId: this.getCurrentDisplay().id,
+    };
+
+    if (this.currentState.resizeFrameEnabled) {
+      this.scheduleLayoutSave();
+    }
+
+    logger.debug('Window resized', { width: newWidth, height: newHeight, anchor });
+  }
+
   // --------------------------------------------------------------------------
   // 窗口属性
   // --------------------------------------------------------------------------
@@ -434,6 +542,33 @@ export class WindowManager implements IWindowManager {
     }
 
     logger.debug('Click through set to', enable, options);
+  }
+
+  /**
+   * 显示窗口边缘并允许用户拖拽调整大小（无边框 + 可视描边由渲染进程绘制）
+   */
+  setResizeFrameEnabled(enabled: boolean): void {
+    if (!this.window || this.window.isDestroyed()) {
+      logger.warn('Cannot set resize frame: window not available');
+      return;
+    }
+
+    this.currentState.resizeFrameEnabled = enabled;
+    this.window.setResizable(enabled);
+
+    if (enabled) {
+      this.window.setMinimumSize(PET_WINDOW_MIN_WIDTH, PET_WINDOW_MIN_HEIGHT);
+      this.window.setHasShadow(true);
+    } else {
+      this.window.setMinimumSize(50, 50);
+      this.window.setHasShadow(false);
+    }
+
+    logger.debug('Resize frame enabled', enabled);
+  }
+
+  isResizeFrameEnabled(): boolean {
+    return this.currentState.resizeFrameEnabled;
   }
 
   // --------------------------------------------------------------------------
@@ -545,6 +680,7 @@ export class WindowManager implements IWindowManager {
 
     try {
       const state = this.getWindowState();
+
       const positionData = JSON.stringify({
         x: state.position.x,
         y: state.position.y,
@@ -577,7 +713,7 @@ export class WindowManager implements IWindowManager {
    * 从持久化存储恢复窗口位置
    */
   async restorePosition(): Promise<boolean> {
-    const savedPosition = await this.loadSavedPosition();
+    const savedPosition = this.loadSavedPosition();
 
     if (!savedPosition) {
       logger.debug('No saved position found');
@@ -601,6 +737,28 @@ export class WindowManager implements IWindowManager {
     // 移动到保存的位置
     this.moveTo(savedPosition.x, savedPosition.y);
     this.currentState.position = savedPosition;
+
+    const savedLayout = this.loadSavedWindowLayout();
+    if (
+      savedLayout?.width !== undefined &&
+      savedLayout?.height !== undefined &&
+      this.window &&
+      !this.window.isDestroyed()
+    ) {
+      const width = clampWindowDimension(
+        savedLayout.width,
+        PET_WINDOW_MIN_WIDTH,
+        PET_WINDOW_MAX_WIDTH,
+        this.currentState.size.width
+      );
+      const height = clampWindowDimension(
+        savedLayout.height,
+        PET_WINDOW_MIN_HEIGHT,
+        PET_WINDOW_MAX_HEIGHT,
+        this.currentState.size.height
+      );
+      this.resizeTo(width, height, { anchor: 'top-left' });
+    }
 
     logger.debug('Window position restored', savedPosition);
     return true;
@@ -705,7 +863,20 @@ export class WindowManager implements IWindowManager {
 
         this.currentState.position = newPosition;
         this.notifyMoveCallbacks(newPosition);
+        if (this.currentState.resizeFrameEnabled) {
+          this.scheduleLayoutSave();
+        }
       }
+    });
+
+    // 用户拖拽调整大小时持久化布局
+    this.window.on('resize', () => {
+      if (!this.window || this.window.isDestroyed() || !this.currentState.resizeFrameEnabled) {
+        return;
+      }
+      const bounds = this.window.getBounds();
+      this.currentState.size = { width: bounds.width, height: bounds.height };
+      this.scheduleLayoutSave();
     });
 
     // 监听关闭事件
@@ -782,9 +953,22 @@ export class WindowManager implements IWindowManager {
   }
 
   /**
-   * 加载保存的位置
+   * 防抖保存窗口位置与尺寸
    */
-  private async loadSavedPosition(): Promise<WindowPosition | null> {
+  private scheduleLayoutSave(): void {
+    if (this.layoutSaveTimer !== null) {
+      clearTimeout(this.layoutSaveTimer);
+    }
+    this.layoutSaveTimer = setTimeout(() => {
+      this.layoutSaveTimer = null;
+      void this.savePosition();
+    }, 300);
+  }
+
+  /**
+   * 从数据库加载保存的窗口布局
+   */
+  private loadSavedWindowLayout(): SavedWindowLayout | null {
     if (!this.db) {
       return null;
     }
@@ -796,18 +980,41 @@ export class WindowManager implements IWindowManager {
       );
 
       if (result?.value) {
-        const parsed = JSON.parse(result.value);
-        return {
-          x: parsed.x,
-          y: parsed.y,
-          monitorId: parsed.monitorId,
-        };
+        const parsed = JSON.parse(result.value) as Partial<SavedWindowLayout>;
+        if (
+          typeof parsed.x === 'number' &&
+          typeof parsed.y === 'number' &&
+          typeof parsed.monitorId === 'number'
+        ) {
+          return {
+            x: parsed.x,
+            y: parsed.y,
+            monitorId: parsed.monitorId,
+            width: typeof parsed.width === 'number' ? parsed.width : undefined,
+            height: typeof parsed.height === 'number' ? parsed.height : undefined,
+          };
+        }
       }
     } catch (error) {
-      logger.error('Failed to load saved position', error);
+      logger.error('Failed to load saved window layout', error);
     }
 
     return null;
+  }
+
+  /**
+   * 加载保存的位置（不含尺寸）
+   */
+  private loadSavedPosition(): WindowPosition | null {
+    const layout = this.loadSavedWindowLayout();
+    if (!layout) {
+      return null;
+    }
+    return {
+      x: layout.x,
+      y: layout.y,
+      monitorId: layout.monitorId,
+    };
   }
 
   /**

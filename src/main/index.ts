@@ -10,7 +10,7 @@
  * - 创建窗口
  */
 
-import { app, BrowserWindow, dialog } from 'electron';
+import { app, BrowserWindow, dialog, type Event } from 'electron';
 import * as path from 'path';
 
 // 数据库和服务
@@ -21,11 +21,16 @@ import { getGlobalCapabilityRegistry } from '../shared/services/capability-regis
 
 // IPC 处理器
 import { registerPetHandlers, unregisterPetHandlers } from './ipc/pet-handler';
+import {
+  registerPetDesktopHandlers,
+  unregisterPetDesktopHandlers,
+} from './ipc/pet-desktop-handler';
 import { registerAIHandlers, unregisterAIHandlers } from './ipc/ai-handler';
 import { registerWindowHandlers, unregisterWindowHandlers } from './ipc/window-handler';
 
 // 窗口管理器
 import { getWindowManager } from './window-manager';
+import { isApplicationQuitting, quitApplication } from './app-quit';
 
 // AI 服务
 import { initializeAIService, shutdownAIService } from './ai-service';
@@ -70,8 +75,6 @@ let eventBus: EventBus | null = null;
 /** 应用是否已准备就绪 */
 let isAppReady = false;
 
-/** 应用是否正在退出 */
-let isQuitting = false;
 
 // ============================================================================
 // 日志工具（临时实现，T020 会替换为 electron-log）
@@ -195,7 +198,8 @@ function initializeIpcHandlers(): void {
   
   // 注册 Pet IPC 处理器
   registerPetHandlers();
-  
+  registerPetDesktopHandlers();
+
   // 注册 AI IPC 处理器
   registerAIHandlers();
   
@@ -275,11 +279,18 @@ async function createMainWindow(): Promise<void> {
     await mainWindow.loadFile(RENDERER_ENTRY);
   }
   
+  // 将渲染进程关键日志转发到主进程终端（DevTools 为 detach 模式时易忽略）
+  mainWindow.webContents.on('console-message', (_event, _level, message) => {
+    if (message.includes('[PetRenderer]') || message.includes('[Renderer]')) {
+      logger.info(message);
+    }
+  });
+
   // 始终打开开发者工具以便调试（分离模式获得更大窗口）
   // TODO: 调试完成后可以改回仅在开发模式下打开
-  mainWindow.webContents.openDevTools({ 
-    mode: 'detach',  // 分离模式，独立窗口
-    activate: true,  // 激活窗口
+  mainWindow.webContents.openDevTools({
+    mode: 'detach', // 分离模式，独立窗口
+    activate: true, // 激活窗口
   });
   logger.info('DevTools opened for debugging');
   
@@ -291,9 +302,10 @@ async function createMainWindow(): Promise<void> {
   
   // 窗口关闭处理
   mainWindow.on('close', (event) => {
-    if (!isQuitting) {
+    if (!isApplicationQuitting()) {
       // 阻止关闭，隐藏到托盘
       event.preventDefault();
+      void windowManager.savePosition();
       mainWindow?.hide();
       logger.info('Main window hidden to tray');
     }
@@ -455,10 +467,15 @@ function onAllWindowsClosed(): void {
 /**
  * 应用退出前
  */
-function onBeforeQuit(): void {
-  isQuitting = true;
+function onBeforeQuit(event: Event): void {
+  if (!isApplicationQuitting()) {
+    event.preventDefault();
+    void quitApplication();
+    return;
+  }
+
   logger.info('Application quitting...');
-  
+
   // 发布退出事件
   if (eventBus) {
     eventBus.emit({
@@ -479,6 +496,7 @@ function onWillQuit(_event: Electron.Event): void {
   try {
     // 注销 IPC 处理器
     unregisterPetHandlers();
+    unregisterPetDesktopHandlers();
     unregisterAIHandlers();
     unregisterWindowHandlers();
     logger.info('IPC handlers unregistered');

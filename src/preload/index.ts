@@ -331,6 +331,14 @@ const windowAPI = {
     return ipcRenderer.invoke('window:move', x, y);
   },
 
+  resize: (
+    width: number,
+    height: number,
+    options?: { anchor?: 'center' | 'top-left' }
+  ): Promise<void> => {
+    return ipcRenderer.invoke('window:resize', width, height, options);
+  },
+
   getPosition: (): Promise<{ x: number; y: number; monitor: number }> => {
     return ipcRenderer.invoke('window:get-position');
   },
@@ -355,6 +363,25 @@ const windowAPI = {
   setClickThrough: (enable: boolean, options?: { forward?: boolean }): Promise<void> => {
     return ipcRenderer.invoke('window:set-click-through', enable, options);
   },
+
+  setResizeFrameEnabled: (enabled: boolean): Promise<void> => {
+    return ipcRenderer.invoke('window:set-resize-frame', enabled);
+  },
+
+  getResizeFrameEnabled: (): Promise<boolean> => {
+    return ipcRenderer.invoke('window:get-resize-frame');
+  },
+
+  saveLayout: (): Promise<void> => {
+    return ipcRenderer.invoke('window:save-position');
+  },
+
+  getState: (): Promise<{
+    position: { x: number; y: number; monitor: number };
+    size: { width: number; height: number };
+  }> => {
+    return ipcRenderer.invoke('window:get-state');
+  },
 };
 
 // ============================================================================
@@ -362,6 +389,10 @@ const windowAPI = {
 // ============================================================================
 
 const petAPI = {
+  getModelUrl: (): Promise<string | null> => {
+    return ipcRenderer.invoke('pet:get-model-url');
+  },
+
   getState: (): Promise<PetState> => {
     return ipcRenderer.invoke('pet:get-state');
   },
@@ -375,6 +406,99 @@ const petAPI = {
 
   savePosition: (position: PetPosition): Promise<void> => {
     return ipcRenderer.invoke('pet:save-position', position);
+  },
+
+  getDesktopConfig: (): Promise<Record<string, unknown>> => {
+    return ipcRenderer.invoke('pet:get-desktop-config');
+  },
+
+  setDesktopConfig: (config: Record<string, unknown>): Promise<Record<string, unknown>> => {
+    return ipcRenderer.invoke('pet:set-desktop-config', config);
+  },
+
+  previewDesktopConfig: (config: Record<string, unknown>): Promise<{
+    windowWidth: number;
+    windowHeight: number;
+    modelScale: number;
+    modelBrightness: number;
+    position: { x: number; y: number; monitor: number };
+  }> => {
+    return ipcRenderer.invoke('pet:preview-desktop-config', config);
+  },
+
+  getLiveLayout: (): Promise<{
+    windowWidth: number;
+    windowHeight: number;
+    modelScale: number;
+    modelBrightness: number;
+    position: { x: number; y: number; monitor: number };
+  }> => {
+    return ipcRenderer.invoke('pet:get-live-layout');
+  },
+
+  listClickSequences: (modelFileName?: string | null): Promise<{ id: string; name: string }[]> => {
+    return ipcRenderer.invoke('pet:list-click-sequences', modelFileName);
+  },
+
+  getClickSequence: (
+    id: string,
+    modelFileName?: string | null
+  ): Promise<{ version: number; name: string; steps: { clipName: string; delayAfterMs?: number }[] } | null> => {
+    return ipcRenderer.invoke('pet:get-click-sequence', id, modelFileName);
+  },
+
+  saveClickSequence: (
+    id: string,
+    file: { name: string; steps: { clipName: string; delayAfterMs?: number }[] },
+    modelFileName?: string | null
+  ): Promise<{ version: number; name: string; steps: { clipName: string; delayAfterMs?: number }[] }> => {
+    return ipcRenderer.invoke('pet:save-click-sequence', id, {
+      version: 1,
+      ...file,
+    }, modelFileName);
+  },
+
+  deleteClickSequence: (id: string, modelFileName?: string | null): Promise<boolean> => {
+    return ipcRenderer.invoke('pet:delete-click-sequence', id, modelFileName);
+  },
+
+  createClickSequence: (
+    displayName: string,
+    modelFileName?: string | null
+  ): Promise<{ id: string; file: { version: number; name: string; steps: unknown[] } }> => {
+    return ipcRenderer.invoke('pet:create-click-sequence', displayName, modelFileName);
+  },
+
+  openSettings: (): Promise<void> => {
+    return ipcRenderer.invoke('pet:open-settings');
+  },
+
+  reportAnimationClips: (clipNames: string[]): Promise<void> => {
+    return ipcRenderer.invoke('pet:report-animation-clips', clipNames);
+  },
+
+  getAnimationClips: (): Promise<string[]> => {
+    return ipcRenderer.invoke('pet:get-animation-clips');
+  },
+
+  listModels: (): Promise<string[]> => {
+    return ipcRenderer.invoke('pet:list-models');
+  },
+
+  getConfigForModel: (modelFileName: string | null): Promise<Record<string, unknown>> => {
+    return ipcRenderer.invoke('pet:get-config-for-model', modelFileName);
+  },
+
+  onDesktopConfigChanged: (
+    callback: (config: Record<string, unknown>) => void
+  ): (() => void) => {
+    return createEventListener('pet:desktop-config-changed', callback);
+  },
+
+  onDesktopConfigPreview: (
+    callback: (config: Record<string, unknown>) => void
+  ): (() => void) => {
+    return createEventListener('pet:desktop-config-preview', callback);
   },
 
   onStateChanged: (callback: (state: PetState) => void): (() => void) => {

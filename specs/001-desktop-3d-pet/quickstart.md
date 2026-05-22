@@ -486,17 +486,29 @@ test.describe('Pet Window', () => {
 
 ### Q: better-sqlite3 编译失败
 
-**Windows解决方案:**
-```bash
-# 安装 Windows Build Tools
-npm install -g windows-build-tools
+常见原因与处理方式：
 
-# 或手动安装 Visual Studio Build Tools
+1. **Node 22 + 旧版 better-sqlite3（无预编译包）**  
+   项目已锁定 `better-sqlite3@^11.9.1`，请删除 `node_modules` 后重新 `npm install`。
+
+2. **Electron 28 与 better-sqlite3 12.x 不兼容**  
+   v12 已移除 Electron ABI v119 的预编译包；在升级 Electron 至 29+ 之前请保持 v11.x。
+
+3. **Python 3.12+ 报 `No module named 'distutils'`**  
+   node-gyp 从源码编译时需要 setuptools：
+   ```bash
+   pip install setuptools
+   ```
+   或安装 [Python 3.11](https://www.python.org/downloads/) 并设置 `npm config set python "C:\Path\To\python311\python.exe"`。
+
+**Windows（仍需从源码编译时）:**
+```bash
+# 安装 Visual Studio 2022，勾选「使用 C++ 的桌面开发」
+# 或运行: npm install -g windows-build-tools  (旧方式，不推荐)
 ```
 
-**macOS解决方案:**
+**macOS:**
 ```bash
-# 安装 Xcode Command Line Tools
 xcode-select --install
 ```
 

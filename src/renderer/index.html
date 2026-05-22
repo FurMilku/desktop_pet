@@ -3,7 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'">
+  <!-- blob:/data: 为 GLB 内嵌贴图所必需（Three.js 通过 blob URL 加载纹理） -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; media-src 'self' blob: data:; connect-src 'self' http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*">
   <title>桌面3D小宠物</title>
   <style>
     /* 透明窗口样式 - 关键配置 */
@@ -76,6 +77,20 @@
     
     #error.visible {
       display: block;
+    }
+
+    /* 菜单开启「显示窗口边缘」时的可视边框（配合系统边缘拖拽缩放） */
+    body.pet-window-frame-visible {
+      box-shadow: inset 0 0 0 2px rgba(96, 165, 250, 0.85);
+    }
+
+    body.pet-window-frame-visible #app::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      border: 1px dashed rgba(255, 255, 255, 0.35);
+      box-sizing: border-box;
     }
   </style>
 </head>

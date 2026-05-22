@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "name": "World_Dig",
+  "steps": [
+    {
+      "clipName": "World_Dig_Start",
+      "delayAfterMs": 0
+    },
+    {
+      "clipName": "World_Dig_Loop",
+      "delayAfterMs": 0
+    },
+    {
+      "clipName": "World_Dig_Loop",
+      "delayAfterMs": 0
+    },
+    {
+      "clipName": "World_Dig_End",
+      "delayAfterMs": 0
+    }
+  ]
+}

@@ -8,6 +8,7 @@
  */
 
 import { ipcMain, IpcMainInvokeEvent } from 'electron';
+import * as fs from 'fs';
 import { getLogger } from '../logger';
 import { getWindowManager } from '../window-manager';
 import {
@@ -30,6 +31,8 @@ import {
   validatePetSkinInput,
   UpdatePetSkinInput,
 } from '../../shared/models/pet-skin';
+import { loadPetDesktopConfig } from '../pet-desktop-config-store';
+import { getPetModelLoadUrl, resolvePetModelFilePath } from '../utils/pet-model-path';
 
 const logger = getLogger('pet-handler');
 
@@ -56,7 +59,8 @@ export const PetChannels = {
   SET_VISIBILITY: 'pet:set-visibility',
   ENSURE_DEFAULT: 'pet:ensure-default',
   GET_FIRST: 'pet:get-first',
-  
+  GET_MODEL_URL: 'pet:get-model-url',
+
   // PetSkin 操作
   SKIN_GET: 'pet:skin:get',
   SKIN_GET_ALL: 'pet:skin:get-all',
@@ -870,6 +874,26 @@ async function handleEnsureDefaultSkin(_event: IpcMainInvokeEvent): Promise<PetS
   }
 }
 
+/**
+ * 获取宠物 3D 模型加载 URL
+ */
+async function handleGetModelUrl(_event: IpcMainInvokeEvent): Promise<string | null> {
+  try {
+    const modelFileName = loadPetDesktopConfig().modelFileName;
+    const url = getPetModelLoadUrl(modelFileName);
+    const filePath = resolvePetModelFilePath(modelFileName);
+    const fileInfo =
+      filePath && fs.existsSync(filePath)
+        ? { path: filePath, sizeMB: (fs.statSync(filePath).size / 1024 / 1024).toFixed(1) }
+        : { path: filePath, exists: false };
+    logger.info('Resolved pet model URL', { url, ...fileInfo });
+    return url;
+  } catch (error) {
+    logger.error('Failed to resolve pet model URL', error);
+    return null;
+  }
+}
+
 // ============================================================================
 // IPC 处理器注册
 // ============================================================================
@@ -895,6 +919,7 @@ export function registerPetHandlers(): void {
   ipcMain.handle(PetChannels.UPDATE_SKIN, handleUpdatePetSkin);
   ipcMain.handle(PetChannels.SET_VISIBILITY, handleSetVisibility);
   ipcMain.handle(PetChannels.ENSURE_DEFAULT, handleEnsureDefaultPet);
+  ipcMain.handle(PetChannels.GET_MODEL_URL, handleGetModelUrl);
 
   // PetSkin 操作
   ipcMain.handle(PetChannels.SKIN_GET, handleGetSkin);
@@ -934,6 +959,7 @@ export function unregisterPetHandlers(): void {
   ipcMain.removeHandler(PetChannels.UPDATE_SKIN);
   ipcMain.removeHandler(PetChannels.SET_VISIBILITY);
   ipcMain.removeHandler(PetChannels.ENSURE_DEFAULT);
+  ipcMain.removeHandler(PetChannels.GET_MODEL_URL);
 
   // PetSkin 操作
   ipcMain.removeHandler(PetChannels.SKIN_GET);

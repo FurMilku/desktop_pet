@@ -345,12 +345,10 @@ export class PetDrag implements IPetDrag {
       this._currentPosition = { x: 0, y: 0 };
     }
 
-    // 切换到拖拽动画
+    // 飞行拖拽：起飞阶段窗口不移动
     if (this._renderer) {
       this._previousAnimation = this._renderer.getCurrentAnimation();
-      this._renderer.setAnimation(this._config.dragAnimation, {
-        transitionDuration: 0.1,
-      });
+      this._renderer.startDragAnimation();
     }
 
     // 触发回调
@@ -366,6 +364,11 @@ export class PetDrag implements IPetDrag {
     event: InteractionEvent & { delta: { x: number; y: number } }
   ): Promise<void> {
     if (!this._config.enabled || !this._isDragging) return;
+
+    // 起飞/落地阶段不移动窗口，循环阶段才跟随
+    if (this._renderer && !this._renderer.isDragFollowingMouse()) {
+      return;
+    }
 
     // 计算新位置
     if (!this._currentPosition) {
@@ -425,12 +428,9 @@ export class PetDrag implements IPetDrag {
     // 停止平滑动画
     this._stopSmoothAnimation();
 
-    // 恢复之前的动画或切换到 idle
+    // 播放落地动画，结束后自动回到 idle
     if (this._renderer) {
-      const targetAnimation = this._previousAnimation || this._config.idleAnimation;
-      this._renderer.setAnimation(targetAnimation, {
-        transitionDuration: 0.2,
-      });
+      this._renderer.endDragAnimation();
     }
 
     this._previousAnimation = null;

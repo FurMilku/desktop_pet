@@ -15,6 +15,7 @@
  */
 
 import { app, shell, Notification, BrowserWindow } from 'electron';
+import { quitApplication } from '../app-quit';
 import {
   createModuleHandlers,
   IPCException,
@@ -385,7 +386,7 @@ class SystemService {
    */
   async quit(): Promise<void> {
     ipcLogger.info('Application quit requested', { action: 'quit' });
-    app.quit();
+    await quitApplication();
   }
 }
 

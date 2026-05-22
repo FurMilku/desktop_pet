@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "modelScale": 1,
+  "modelBrightness": 1,
+  "sourceAnimationFps": 120,
+  "playbackSpeed": 1,
+  "clickAnimation": {
+    "pool": [
+      {
+        "clipName": "Common_Alert",
+        "weight": 10
+      },
+      {
+        "clipName": "Common_Anger",
+        "weight": 10
+      },
+      {
+        "clipName": "Common_Fear",
+        "weight": 10
+      },
+      {
+        "clipName": "Common_Happy",
+        "weight": 10
+      },
+      {
+        "clipName": "Common_Relax",
+        "weight": 10
+      },
+      {
+        "clipName": "Common_Sad",
+        "weight": 10
+      },
+      {
+        "clipName": "Common_Show",
+        "weight": 10
+      },
+      {
+        "clipName": "seq:world_dig",
+        "weight": 10
+      }
+    ],
+    "activeSequenceId": null
+  }
+}

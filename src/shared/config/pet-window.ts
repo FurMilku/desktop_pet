@@ -12,13 +12,31 @@
  * 宠物窗口默认宽度（像素）
  * 用户可以通过修改此值来调整宠物大小
  */
-export const PET_WINDOW_WIDTH = 150;
+export const PET_WINDOW_WIDTH = 600;
 
 /**
  * 宠物窗口默认高度（像素）
  * 用户可以通过修改此值来调整宠物大小
  */
-export const PET_WINDOW_HEIGHT = 200;
+export const PET_WINDOW_HEIGHT = 800;
+
+/** 飞行/大动作时窗口宽度下限 */
+export const PET_WINDOW_MIN_WIDTH = 400;
+
+/** 飞行/大动作时窗口高度下限 */
+export const PET_WINDOW_MIN_HEIGHT = 500;
+
+/** 飞行/大动作时窗口宽度上限 */
+export const PET_WINDOW_MAX_WIDTH = 1200;
+
+/** 飞行/大动作时窗口高度上限 */
+export const PET_WINDOW_MAX_HEIGHT = 1400;
+
+/** 飞行自适应视口边距（像素） */
+export const PET_FLY_VIEWPORT_PADDING = 56;
+
+/** 设置项：是否显示窗口边缘并允许手动调整大小 */
+export const SETTING_SHOW_WINDOW_FRAME = 'pet.showWindowFrame';
 
 // ============================================================================
 // 窗口尺寸对象（便于解构使用）
