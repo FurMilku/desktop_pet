@@ -513,6 +513,15 @@ const petAPI = {
     return ipcRenderer.invoke('pet:report-animation-clips', clipNames);
   },
 
+  reportModelResolution: (payload: {
+    modelFileName?: string | null;
+    width: number;
+    height: number;
+    depth: number;
+  }): Promise<void> => {
+    return ipcRenderer.invoke('pet:report-model-resolution', payload);
+  },
+
   getAnimationClips: (): Promise<string[]> => {
     return ipcRenderer.invoke('pet:get-animation-clips');
   },

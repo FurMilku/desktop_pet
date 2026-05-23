@@ -17,10 +17,16 @@ import {
   type IContextMenu,
 } from './ui/context-menu';
 import {
+  DEFAULT_MODEL_SCALE,
   normalizeClickAnimationSettings,
   normalizePetDesktopConfig,
+  type ClickAnimationSettings,
   type PetDesktopConfig,
 } from '../shared/config/pet-desktop-settings';
+import {
+  FPS_MONITOR_POSITIONS,
+  type FpsMonitorPosition,
+} from '../shared/config/fps-monitor';
 import {
   REFERENCE_DISPLAY_SCALE,
   applyDisplayScaleToModelScale,
@@ -110,7 +116,14 @@ interface PetAPI {
   }>;
   openSettings(): Promise<void>;
   reportAnimationClips(clipNames: string[]): Promise<void>;
+  reportModelResolution?(payload: {
+    modelFileName?: string | null;
+    width: number;
+    height: number;
+    depth: number;
+  }): Promise<void>;
   getAnimationClips(): Promise<string[]>;
+  getConfigForModel?: (modelFileName: string | null) => Promise<PetDesktopConfig>;
   onDesktopConfigChanged(callback: (config: PetDesktopConfig) => void): () => void;
   onDesktopConfigPreview?(callback: (config: PetDesktopConfig) => void): () => void;
   onStateChanged(callback: (state: PetState) => void): () => void;
@@ -166,6 +179,10 @@ const petContainer = document.getElementById('pet-container') as HTMLDivElement;
 const loadingElement = document.getElementById('loading') as HTMLDivElement;
 const errorElement = document.getElementById('error') as HTMLDivElement;
 const errorMessage = document.getElementById('error-message') as HTMLParagraphElement;
+const fpsMonitorElement = document.getElementById('fps-monitor') as HTMLDivElement | null;
+
+let fpsMonitorEnabled = false;
+let fpsMonitorPosition: FpsMonitorPosition = 'top-left';
 
 // ============================================================
 // 鼠标拖拽状态
@@ -189,10 +206,13 @@ let dragMetrics: ScaledDragMetrics = scaleDragMetrics(REFERENCE_DISPLAY_SCALE);
 let displayScaleFactor = REFERENCE_DISPLAY_SCALE;
 
 /** 持久化配置中的模型缩放（100% 基准） */
-let storedModelScale = 1;
+let storedModelScale = DEFAULT_MODEL_SCALE;
 
 /** 是否已超过拖拽阈值 */
 let hasDragThresholdMet = false;
+
+/** 左键在宠物上按下且尚未视为拖拽（用于 mouseup 触发点击互动） */
+let petPressOnPet = false;
 
 /** 待应用的窗口位置（rAF 合并移动请求，提升跟手度） */
 let pendingWindowPos: { x: number; y: number } | null = null;
@@ -286,6 +306,13 @@ let modelLoadInProgress = false;
 // 工具函数
 // ============================================================
 
+async function syncRendererDisplayScale(): Promise<void> {
+  await refreshDisplayScaleFactor();
+  if (petRenderer && !usePlaceholderPet) {
+    petRenderer.setRuntimeDisplayScaleFactor(displayScaleFactor);
+  }
+}
+
 async function refreshDisplayScaleFactor(): Promise<void> {
   const api = getElectronAPI();
   if (!api?.window?.getDisplayScale) {
@@ -297,17 +324,15 @@ async function refreshDisplayScaleFactor(): Promise<void> {
     if (!Number.isFinite(nextScale) || nextScale <= 0) {
       return;
     }
-    if (Math.abs(nextScale - displayScaleFactor) < 0.001) {
-      return;
+    const scaleChanged = Math.abs(nextScale - displayScaleFactor) >= 0.001;
+    displayScaleFactor = nextScale;
+    if (scaleChanged) {
+      dragMetrics = scaleDragMetrics(displayScaleFactor);
     }
 
-    displayScaleFactor = nextScale;
-    dragMetrics = scaleDragMetrics(displayScaleFactor);
-
-    if (petRenderer && !usePlaceholderPet) {
-      petRenderer.setModelScaleFactor(
-        applyDisplayScaleToModelScale(storedModelScale, displayScaleFactor)
-      );
+    if (petRenderer && !usePlaceholderPet && !modelLoadInProgress) {
+      petRenderer.setRuntimeDisplayScaleFactor(displayScaleFactor);
+      petRenderer.setModelScaleFactor(storedModelScale);
     }
   } catch (error) {
     console.warn('[Renderer] Failed to refresh display scale factor:', error);
@@ -892,6 +917,47 @@ function applyModelPlaybackSettings(
   petRenderer.setPlaybackSpeed(normalized.playbackSpeed, options);
 }
 
+async function applyWindowLayoutFromConfig(config: PetDesktopConfig): Promise<void> {
+  const api = getElectronAPI();
+  const normalized = normalizePetDesktopConfig(config);
+
+  if (api?.window?.resize) {
+    await api.window.resize(normalized.windowWidth, normalized.windowHeight, {
+      anchor: 'center',
+    });
+    petRenderer?.resize(normalized.windowWidth, normalized.windowHeight);
+  }
+
+  if (api?.window?.move) {
+    await api.window.move(normalized.position.x, normalized.position.y);
+  }
+}
+
+function finalizePetModelAfterLayout(config: PetDesktopConfig): void {
+  if (!petRenderer || usePlaceholderPet) {
+    return;
+  }
+  const normalized = normalizePetDesktopConfig(config);
+  petRenderer.finalizeModelCameraAfterLayout();
+  storedModelScale = normalized.modelScale;
+  petRenderer.setModelScaleFactor(storedModelScale);
+}
+
+async function applyModelSettingsAfterLoad(
+  config: PetDesktopConfig,
+  clickAnimation: ClickAnimationSettings
+): Promise<void> {
+  if (!petRenderer || usePlaceholderPet) {
+    return;
+  }
+
+  const normalized = normalizePetDesktopConfig(config);
+  storedModelScale = normalized.modelScale;
+  petRenderer.setModelBrightness(normalized.modelBrightness);
+  applyModelPlaybackSettings(normalized, { force: true });
+  petRenderer.setClickAnimationSettings(clickAnimation);
+}
+
 async function reloadPetModelFromConfig(config?: PetDesktopConfig): Promise<void> {
   if (!petRenderer || modelLoadInProgress) {
     return;
@@ -899,6 +965,66 @@ async function reloadPetModelFromConfig(config?: PetDesktopConfig): Promise<void
 
   console.log('[Renderer] Reloading pet model after config change...');
   await loadPetModel(config);
+}
+
+async function resolvePerModelVisualSettingsForApply(
+  incoming: PetDesktopConfig,
+  loadedModel: string | null,
+  api: ReturnType<typeof getElectronAPI>
+): Promise<PetDesktopConfig> {
+  const normalized = normalizePetDesktopConfig(incoming);
+  if (normalized.modelFileName === loadedModel || !api?.pet?.getConfigForModel) {
+    return normalized;
+  }
+
+  try {
+    const forModel = normalizePetDesktopConfig(
+      await api.pet.getConfigForModel(normalized.modelFileName)
+    );
+    return {
+      ...normalized,
+      modelScale: forModel.modelScale,
+      modelBrightness: forModel.modelBrightness,
+      sourceAnimationFps: forModel.sourceAnimationFps,
+      playbackSpeed: forModel.playbackSpeed,
+      ...(forModel.modelResolution ? { modelResolution: forModel.modelResolution } : {}),
+    };
+  } catch {
+    return normalized;
+  }
+}
+
+async function resolveClickAnimationForApply(
+  incoming: PetDesktopConfig['clickAnimation'] | undefined,
+  modelFileName: string | null,
+  api: ReturnType<typeof getElectronAPI>
+): Promise<ClickAnimationSettings> {
+  const fromIncoming = normalizeClickAnimationSettings(incoming);
+  const needsRuntimeSteps =
+    !fromIncoming.sequenceStepsById ||
+    (fromIncoming.activeSequenceId &&
+      !(fromIncoming.sequenceSteps && fromIncoming.sequenceSteps.length > 0));
+
+  if (!needsRuntimeSteps || !api?.pet) {
+    return fromIncoming;
+  }
+
+  try {
+    const base = normalizePetDesktopConfig(
+      api.pet.getConfigForModel
+        ? await api.pet.getConfigForModel(modelFileName)
+        : await api.pet.getDesktopConfig()
+    );
+    const enriched = base.clickAnimation;
+    return {
+      pool: fromIncoming.pool,
+      activeSequenceId: fromIncoming.activeSequenceId,
+      ...(enriched.sequenceSteps ? { sequenceSteps: enriched.sequenceSteps } : {}),
+      ...(enriched.sequenceStepsById ? { sequenceStepsById: enriched.sequenceStepsById } : {}),
+    };
+  } catch {
+    return fromIncoming;
+  }
 }
 
 async function applyDesktopConfig(
@@ -910,20 +1036,22 @@ async function applyDesktopConfig(
   }
 
   const api = getElectronAPI();
-  const normalized = normalizePetDesktopConfig(config);
-  let clickAnimation = normalizeClickAnimationSettings(config.clickAnimation);
-  if (
-    api?.pet?.getDesktopConfig &&
-    options.persist !== false &&
-    !config.clickAnimation?.sequenceStepsById
-  ) {
-    try {
-      const fresh = normalizePetDesktopConfig(await api.pet.getDesktopConfig());
-      clickAnimation = fresh.clickAnimation;
-    } catch {
-      // 使用传入配置
-    }
+  const modelChangedBeforeResolve =
+    normalizePetDesktopConfig(config).modelFileName !== loadedModelFileName;
+  let normalized = normalizePetDesktopConfig(config);
+  if (modelChangedBeforeResolve) {
+    normalized = await resolvePerModelVisualSettingsForApply(
+      normalized,
+      loadedModelFileName,
+      api
+    );
   }
+  applyFpsMonitorSettings(normalized);
+  const clickAnimation = await resolveClickAnimationForApply(
+    config.clickAnimation,
+    normalized.modelFileName,
+    api
+  );
 
   const modelChanged = normalized.modelFileName !== loadedModelFileName;
   const fpsChanged =
@@ -935,8 +1063,14 @@ async function applyDesktopConfig(
     !usePlaceholderPet &&
     petRenderer.getPlaybackSpeed() !== normalized.playbackSpeed;
 
-  // 切换模型必须重载 GLB：否则仍显示旧 mesh 但套用新 modelScale（如从裘卡 0.15 切到 1.0 会瞬间变大）
+  // 切换模型必须重载 GLB：否则仍显示旧 mesh 但套用新 modelScale（如从裘卡 0.30 切到 1.0 会瞬间变大）
+  let resumeRenderingAfterModelChange = false;
   if (modelChanged) {
+    resumeRenderingAfterModelChange = petRenderer?.isRendering() ?? false;
+    if (resumeRenderingAfterModelChange) {
+      petRenderer!.pause();
+    }
+    await refreshDisplayScaleFactor();
     await reloadPetModelFromConfig(normalized);
   } else if (petRenderer && !usePlaceholderPet && (fpsChanged || playbackSpeedChanged)) {
     applyModelPlaybackSettings(normalized);
@@ -944,31 +1078,39 @@ async function applyDesktopConfig(
   }
 
   if (petRenderer && !usePlaceholderPet) {
-    storedModelScale = normalized.modelScale;
-    // 重载路径已在 loadPetModel → applyDesktopConfig 内写入缩放/亮度，避免对旧 mesh 误乘新倍率
-    if (!modelChanged) {
-      petRenderer.setModelScaleFactor(
-        applyDisplayScaleToModelScale(storedModelScale, displayScaleFactor)
-      );
+    const modelReady =
+      !modelChanged || loadedModelFileName === normalized.modelFileName;
+    if (modelReady) {
+      storedModelScale = normalized.modelScale;
+      await syncRendererDisplayScale();
+      petRenderer.setModelScaleFactor(storedModelScale);
       petRenderer.setModelBrightness(normalized.modelBrightness);
       applyModelPlaybackSettings(normalized);
     }
     petRenderer.setClickAnimationSettings(clickAnimation);
   }
 
-  if (petRenderer && !usePlaceholderPet && modelChanged) {
+  // 与冷启动一致：先应用窗口尺寸，再定稿相机，最后播放入场动画
+  await applyWindowLayoutFromConfig(normalized);
+
+  if (
+    petRenderer &&
+    !usePlaceholderPet &&
+    modelChanged &&
+    loadedModelFileName === normalized.modelFileName
+  ) {
+    finalizePetModelAfterLayout(normalized);
+    if (resumeRenderingAfterModelChange) {
+      petRenderer.resume();
+    }
     petRenderer.beginPresentationAfterModelLoad();
-  }
-
-  if (api?.window?.resize) {
-    await api.window.resize(normalized.windowWidth, normalized.windowHeight, {
-      anchor: 'center',
-    });
-    petRenderer?.resize(normalized.windowWidth, normalized.windowHeight);
-  }
-
-  if (api?.window?.move) {
-    await api.window.move(normalized.position.x, normalized.position.y);
+  } else if (modelChanged && loadedModelFileName !== normalized.modelFileName) {
+    console.warn(
+      '[Renderer] Model reload did not complete; skipped camera finalize to avoid wrong scale on stale mesh'
+    );
+    if (resumeRenderingAfterModelChange) {
+      petRenderer?.resume();
+    }
   }
 
   if (options.persist) {
@@ -1005,6 +1147,48 @@ function reportAnimationClipsToMain(): void {
   }
   const names = petRenderer.getAllAnimationClipNames();
   void getElectronAPI()?.pet?.reportAnimationClips?.(names);
+}
+
+function reportModelResolutionToMain(modelFileName: string | null): void {
+  if (!petRenderer || usePlaceholderPet) {
+    return;
+  }
+  const size = petRenderer.getModelBoundingSize?.();
+  if (!size) {
+    return;
+  }
+  void getElectronAPI()?.pet?.reportModelResolution?.({
+    modelFileName,
+    ...size,
+  });
+}
+
+function applyFpsMonitorSettings(config: PetDesktopConfig): void {
+  fpsMonitorEnabled = config.fpsMonitorEnabled;
+  fpsMonitorPosition = config.fpsMonitorPosition;
+  if (!fpsMonitorElement) {
+    return;
+  }
+  for (const pos of FPS_MONITOR_POSITIONS) {
+    fpsMonitorElement.classList.remove(`pos-${pos}`);
+  }
+  fpsMonitorElement.classList.add(`pos-${fpsMonitorPosition}`);
+  fpsMonitorElement.classList.toggle('is-visible', fpsMonitorEnabled);
+  fpsMonitorElement.setAttribute('aria-hidden', fpsMonitorEnabled ? 'false' : 'true');
+  if (!fpsMonitorEnabled) {
+    fpsMonitorElement.textContent = '';
+  }
+}
+
+function updateFpsMonitorOverlay(fps: number): void {
+  if (!fpsMonitorEnabled || !fpsMonitorElement) {
+    return;
+  }
+  const clipName =
+    petRenderer && !usePlaceholderPet
+      ? petRenderer.getCurrentPlayingClipName?.() ?? '—'
+      : '—';
+  fpsMonitorElement.textContent = `${fps} FPS\n${clipName}`;
 }
 
 function buildPetContextMenuItems() {
@@ -1241,7 +1425,8 @@ async function initThreeJS(): Promise<void> {
       onViewportResizeRequest: (size) => {
         scheduleViewportResize(size.width, size.height);
       },
-      onFrame: () => {
+      onFrame: (_deltaTime, fps) => {
+        updateFpsMonitorOverlay(fps);
         pushPetHitRegionToMain();
       },
       onError: (error) => {
@@ -1276,24 +1461,54 @@ async function loadPetModel(configOverride?: PetDesktopConfig): Promise<void> {
   modelLoadInProgress = true;
   console.log('[Renderer] Loading pet model...');
 
+  const previousLoadedModel = loadedModelFileName;
+
   try {
+    await refreshDisplayScaleFactor();
+
     // 预设使用占位宠物标志（因为 onError 回调可能在 catch 之前触发）
     // 如果模型加载成功，会重置此标志
     usePlaceholderPet = true;
 
-    const resolvedConfig = normalizePetDesktopConfig(
-    configOverride ??
-      (await getElectronAPI()?.pet?.getDesktopConfig?.()) ??
-      {}
-  );
+    let resolvedConfig = normalizePetDesktopConfig(
+      configOverride ??
+        (await getElectronAPI()?.pet?.getDesktopConfig?.()) ??
+        {}
+    );
+
+    const electronAPI = getElectronAPI();
+    if (
+      configOverride &&
+      electronAPI?.pet?.getConfigForModel &&
+      resolvedConfig.modelFileName &&
+      resolvedConfig.modelFileName !== previousLoadedModel
+    ) {
+      try {
+        const fromDisk = normalizePetDesktopConfig(
+          await electronAPI.pet.getConfigForModel(resolvedConfig.modelFileName)
+        );
+        resolvedConfig = {
+          ...resolvedConfig,
+          modelScale: fromDisk.modelScale,
+          modelBrightness: fromDisk.modelBrightness,
+          sourceAnimationFps: fromDisk.sourceAnimationFps,
+          playbackSpeed: fromDisk.playbackSpeed,
+        };
+      } catch {
+        // keep incoming
+      }
+    }
+
     const effectiveModelScale = applyDisplayScaleToModelScale(
       resolvedConfig.modelScale,
       displayScaleFactor
     );
+    console.log(
+      `[Renderer] Model scale: stored=${resolvedConfig.modelScale}, display=${displayScaleFactor}, effective=${effectiveModelScale.toFixed(3)}`
+    );
 
     // 由主进程解析模型路径（支持任意 .glb 文件名）
     const modelPaths: string[] = [];
-    const electronAPI = getElectronAPI();
     if (electronAPI?.pet?.getModelUrl) {
       const resolvedUrl = await electronAPI.pet.getModelUrl(resolvedConfig.modelFileName);
       if (resolvedUrl) {
@@ -1313,10 +1528,12 @@ async function loadPetModel(configOverride?: PetDesktopConfig): Promise<void> {
     for (const modelPath of modelPaths) {
       try {
         console.log(`[Renderer] Trying to load model: ${modelPath}`);
+        petRenderer.setRuntimeDisplayScaleFactor(displayScaleFactor);
         await petRenderer.loadModel({
           modelPath,
           autoFit: true,
-          modelScaleFactor: effectiveModelScale,
+          modelScaleFactor: resolvedConfig.modelScale,
+          displayScaleFactor,
         });
         modelLoaded = true;
         usePlaceholderPet = false;
@@ -1327,7 +1544,17 @@ async function loadPetModel(configOverride?: PetDesktopConfig): Promise<void> {
         );
         refreshPetContextMenu();
         reportAnimationClipsToMain();
-        await applyDesktopConfig(resolvedConfig, { persist: false });
+        reportModelResolutionToMain(resolvedConfig.modelFileName);
+        const clickAnimation = await resolveClickAnimationForApply(
+          resolvedConfig.clickAnimation,
+          resolvedConfig.modelFileName,
+          electronAPI
+        );
+        await applyModelSettingsAfterLoad(resolvedConfig, clickAnimation);
+        if (!configOverride) {
+          await applyWindowLayoutFromConfig(resolvedConfig);
+          finalizePetModelAfterLayout(resolvedConfig);
+        }
         pushPetHitRegionToMain();
         break;
       } catch (error) {
@@ -2088,9 +2315,11 @@ function initMouseEvents(): void {
     if (event.button !== 0) return;
 
     if (!checkMouseOnPet(event.clientX, event.clientY)) {
+      petPressOnPet = false;
       return;
     }
 
+    petPressOnPet = true;
     trackPointerPosition(event.clientX, event.clientY);
     pushPetHitRegionToMain();
     setClickThroughInteractionLock(true);
@@ -2271,11 +2500,19 @@ function initMouseEvents(): void {
     if (event.button !== 0) return;
     
     const wasDragging = isDragging && hasDragThresholdMet;
+    const shouldPlayClick =
+      petPressOnPet && !hasDragThresholdMet && checkMouseOnPet(event.clientX, event.clientY);
+    petPressOnPet = false;
     isDragging = false;
 
     if (!contextMenuOpen && !petContextMenu?.isOpen) {
       setClickThroughInteractionLock(false);
       pushPetHitRegionToMain();
+    }
+
+    if (shouldPlayClick && petRenderer?.isInitialized() && !usePlaceholderPet) {
+      console.log('[Renderer] Click on pet at:', event.clientX, event.clientY);
+      petRenderer.playInteractionReaction();
     }
 
     cancelScheduledWindowMove();
@@ -2311,6 +2548,7 @@ function initMouseEvents(): void {
     }
 
     if (wasDragging) {
+      hasDragThresholdMet = false;
       // 窗口尺寸在 onDragFlyEnd（落地结束）后恢复
 
       // 保存最终位置
@@ -2331,23 +2569,21 @@ function initMouseEvents(): void {
   });
   
   // --------------------------------------------------------
-  // 单击事件 - 宠物互动
+  // 单击事件 - 透明窗口下 click 可能丢失，互动已在 mouseup 处理
   // --------------------------------------------------------
   targetElement.addEventListener('click', (event: MouseEvent) => {
-    // 如果刚完成拖拽，忽略此次点击
     if (hasDragThresholdMet) {
       hasDragThresholdMet = false;
       return;
     }
-    
-    if (!petRenderer?.isInitialized() && !usePlaceholderPet) {
+    // 占位宠物仍走 click（无穿透切换问题）
+    if (!usePlaceholderPet) {
       return;
     }
     if (!checkMouseOnPet(event.clientX, event.clientY)) {
       return;
     }
-
-    console.log('[Renderer] Click on pet at:', event.clientX, event.clientY);
+    console.log('[Renderer] Click on placeholder pet at:', event.clientX, event.clientY);
     petRenderer?.playInteractionReaction();
   });
   
@@ -2371,6 +2607,7 @@ function initMouseEvents(): void {
     }
     event.preventDefault();
     isDragging = false;
+    petPressOnPet = false;
     hasDragThresholdMet = false;
     stopAllDragFollowLoops();
     clearFlyCoastState();

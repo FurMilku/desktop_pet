@@ -24,6 +24,12 @@ import {
   clampSourceAnimationFps,
 } from '../../shared/config/pet-model-settings';
 import {
+  FPS_MONITOR_POSITIONS,
+  FPS_MONITOR_POSITION_LABELS,
+  type FpsMonitorPosition,
+} from '../../shared/config/fps-monitor';
+import type { ModelResolution } from '../../shared/config/pet-model-settings';
+import {
   REFERENCE_DISPLAY_SCALE,
   applyDisplayScaleToModelScale,
   effectiveModelScaleLimits,
@@ -41,6 +47,8 @@ interface PetLiveLayout {
   windowWidth: number;
   windowHeight: number;
   modelScale: number;
+  storedModelScale: number;
+  petDisplayScaleFactor: number;
   modelBrightness: number;
   position: { x: number; y: number; monitor: number };
 }
@@ -110,6 +118,19 @@ let livePollTimer: ReturnType<typeof setInterval> | null = null;
 const focusedLayoutFields = new Set<string>();
 /** 当前设置窗口所在显示器的 Windows 缩放倍率 */
 let displayScaleFactor = REFERENCE_DISPLAY_SCALE;
+/** 宠物窗口所在显示器的 Windows 缩放倍率（模型缩放换算以此为准） */
+let petDisplayScaleFactor = REFERENCE_DISPLAY_SCALE;
+
+const SETTINGS_CATEGORIES = [
+  { id: 'model', label: '模型与窗口', sectionId: 'section-model' },
+  { id: 'position', label: '窗口位置', sectionId: 'section-position' },
+  { id: 'click', label: '点击动画', sectionId: 'section-click' },
+  { id: 'debug', label: '调试', sectionId: 'section-debug' },
+] as const;
+
+type SettingsCategoryId = (typeof SETTINGS_CATEGORIES)[number]['id'];
+
+let activeSettingsCategory: SettingsCategoryId = 'model';
 
 const el = {
   modelFile: document.getElementById('model-file') as HTMLSelectElement,
@@ -145,23 +166,110 @@ const el = {
   liveSize: document.getElementById('live-size')!,
   liveScale: document.getElementById('live-scale')!,
   livePosition: document.getElementById('live-position')!,
+  modelResolutionReadout: document.getElementById('model-resolution-readout')!,
+  settingsNav: document.getElementById('settings-nav')!,
+  fpsMonitorEnabled: document.getElementById('fps-monitor-enabled') as HTMLInputElement,
+  fpsMonitorPosition: document.getElementById('fps-monitor-position')!,
+  fpsMonitorPositionFieldset: document.getElementById('fps-monitor-position-fieldset')!,
 };
+
+function formatModelResolution(resolution?: ModelResolution): string {
+  if (!resolution) {
+    return '模型分辨率：尚未记录（加载模型后自动写入 JSON）';
+  }
+  return `模型分辨率：${resolution.width} × ${resolution.height} × ${resolution.depth}（绑定姿势包围盒）`;
+}
+
+function updateModelResolutionReadout(config: PetDesktopConfig): void {
+  el.modelResolutionReadout.textContent = formatModelResolution(config.modelResolution);
+}
+
+function switchSettingsCategory(categoryId: SettingsCategoryId): void {
+  activeSettingsCategory = categoryId;
+  for (const category of SETTINGS_CATEGORIES) {
+    const section = document.getElementById(category.sectionId);
+    if (section) {
+      section.hidden = category.id !== categoryId;
+    }
+    const navBtn = el.settingsNav.querySelector<HTMLButtonElement>(
+      `[data-category-id="${category.id}"]`
+    );
+    navBtn?.classList.toggle('is-active', category.id === categoryId);
+  }
+}
+
+function initSettingsNavigation(): void {
+  el.settingsNav.innerHTML = '';
+  for (const category of SETTINGS_CATEGORIES) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'settings-nav-item';
+    btn.dataset.categoryId = category.id;
+    btn.textContent = category.label;
+    btn.addEventListener('click', () => {
+      switchSettingsCategory(category.id);
+    });
+    el.settingsNav.appendChild(btn);
+  }
+  switchSettingsCategory(activeSettingsCategory);
+}
+
+function readFpsMonitorPositionFromUi(): FpsMonitorPosition {
+  const checked = el.fpsMonitorPosition.querySelector<HTMLInputElement>(
+    'input[type="radio"]:checked'
+  );
+  const value = checked?.value;
+  if (value && FPS_MONITOR_POSITIONS.includes(value as FpsMonitorPosition)) {
+    return value as FpsMonitorPosition;
+  }
+  return 'top-left';
+}
+
+function buildFpsMonitorPositionRadios(selected: FpsMonitorPosition): void {
+  el.fpsMonitorPosition.innerHTML = '';
+  const groupName = 'fps-monitor-position';
+  for (const pos of FPS_MONITOR_POSITIONS) {
+    const label = document.createElement('label');
+    label.className = 'radio-option';
+    const input = document.createElement('input');
+    input.type = 'radio';
+    input.name = groupName;
+    input.value = pos;
+    input.checked = pos === selected;
+    input.addEventListener('change', scheduleConfigPreview);
+    label.append(input, document.createTextNode(FPS_MONITOR_POSITION_LABELS[pos]));
+    el.fpsMonitorPosition.appendChild(label);
+  }
+}
+
+function syncFpsMonitorPositionFieldset(): void {
+  const enabled = el.fpsMonitorEnabled.checked;
+  el.fpsMonitorPositionFieldset.toggleAttribute('disabled', !enabled);
+  el.fpsMonitorPosition.querySelectorAll('input').forEach((input) => {
+    input.disabled = !enabled;
+  });
+}
 
 function formatLiveSize(layout: PetLiveLayout): string {
   return `当前实际：${layout.windowWidth} × ${layout.windowHeight} px`;
 }
 
 function formatLiveScale(layout: PetLiveLayout): string {
-  const pct = Math.round(displayScaleFactor * 100);
+  const pct = Math.round((layout.petDisplayScaleFactor ?? displayScaleFactor) * 100);
   return `当前实际：模型缩放 ${layout.modelScale.toFixed(2)}×（Windows ${pct}%）`;
 }
 
+/** 模型缩放滑块/DPI 换算以宠物窗口所在显示器为准 */
+function modelScaleDisplayFactor(): number {
+  return petDisplayScaleFactor;
+}
+
 function modelScaleForDisplay(storedScale: number): number {
-  return applyDisplayScaleToModelScale(storedScale, displayScaleFactor);
+  return applyDisplayScaleToModelScale(storedScale, modelScaleDisplayFactor());
 }
 
 function updateModelScaleSliderRange(): void {
-  const { min, max } = effectiveModelScaleLimits(displayScaleFactor);
+  const { min, max } = effectiveModelScaleLimits(modelScaleDisplayFactor());
   el.modelScale.min = String(min);
   el.modelScale.max = String(max);
 }
@@ -171,6 +279,22 @@ function setModelScaleInputs(storedScale: number): void {
   const displayScale = modelScaleForDisplay(storedScale);
   el.modelScale.value = String(displayScale);
   el.modelScaleValue.textContent = displayScale.toFixed(2);
+}
+
+async function refreshPetDisplayScaleFactor(layout?: PetLiveLayout | null): Promise<void> {
+  const nextScale =
+    layout?.petDisplayScaleFactor ??
+    (await api?.pet?.getLiveLayout?.())?.petDisplayScaleFactor;
+  if (typeof nextScale !== 'number' || nextScale <= 0) {
+    return;
+  }
+  const scaleChanged = Math.abs(nextScale - petDisplayScaleFactor) >= 0.001;
+  petDisplayScaleFactor = nextScale;
+  if (scaleChanged && draft) {
+    setModelScaleInputs(draft.modelScale);
+  } else if (scaleChanged) {
+    updateModelScaleSliderRange();
+  }
 }
 
 async function refreshDisplayScaleFactor(): Promise<void> {
@@ -209,13 +333,23 @@ function syncLayoutInputsFromLive(layout: PetLiveLayout): void {
   if (!focusedLayoutFields.has('window-height')) {
     el.windowHeight.value = String(layout.windowHeight);
   }
-  if (!focusedLayoutFields.has('model-scale')) {
-    el.modelScale.value = String(layout.modelScale);
-    el.modelScaleValue.textContent = layout.modelScale.toFixed(2);
-  }
-  if (!focusedLayoutFields.has('model-brightness')) {
-    el.modelBrightness.value = String(layout.modelBrightness);
-    el.modelBrightnessValue.textContent = layout.modelBrightness.toFixed(2);
+  // 切换模型预览期间，宠物窗口仍显示旧模型；勿用其缩放/亮度覆盖新模型的独立设置
+  if (!isModelSwitchPending()) {
+    if (!focusedLayoutFields.has('model-scale')) {
+      const liveStored = layout.storedModelScale ?? layout.modelScale;
+      const sliderStored = unapplyDisplayScaleFromModelScale(
+        Number(el.modelScale.value),
+        modelScaleDisplayFactor()
+      );
+      const previewPending = Math.abs(sliderStored - liveStored) >= 0.002;
+      if (!previewPending) {
+        setModelScaleInputs(liveStored);
+      }
+    }
+    if (!focusedLayoutFields.has('model-brightness')) {
+      el.modelBrightness.value = String(layout.modelBrightness);
+      el.modelBrightnessValue.textContent = layout.modelBrightness.toFixed(2);
+    }
   }
   if (!focusedLayoutFields.has('pos-x')) {
     el.posX.value = String(layout.position.x);
@@ -231,6 +365,7 @@ function syncLayoutInputsFromLive(layout: PetLiveLayout): void {
 async function refreshLiveLayout(): Promise<void> {
   const layout = await api?.pet?.getLiveLayout?.();
   if (!layout) return;
+  await refreshPetDisplayScaleFactor(layout);
   updateLiveReadouts(layout);
   syncLayoutInputsFromLive(layout);
 }
@@ -243,11 +378,18 @@ function scheduleConfigPreview(): void {
   }, 120);
 }
 
+async function readFormForApply(): Promise<PetDesktopConfig> {
+  await refreshDisplayScaleFactor();
+  await refreshPetDisplayScaleFactor();
+  return readForm();
+}
+
 async function applyConfigPreview(): Promise<void> {
   if (!api?.pet?.previewDesktopConfig) return;
   try {
-    const config = readForm();
+    const config = await readFormForApply();
     const layout = await api.pet.previewDesktopConfig(config);
+    await refreshPetDisplayScaleFactor(layout);
     updateLiveReadouts(layout);
   } catch (error) {
     console.warn('[Settings] Config preview failed:', error);
@@ -300,6 +442,11 @@ function selectedModelFileName(): string | null {
   return el.modelFile.value.trim() || null;
 }
 
+/** 下拉框已选新模型但尚未保存时，宠物窗口仍可能是旧模型 */
+function isModelSwitchPending(): boolean {
+  return selectedModelFileName() !== (savedConfig?.modelFileName ?? null);
+}
+
 async function reloadSequenceSummaries(modelFileName?: string | null): Promise<void> {
   const target = modelFileName !== undefined ? modelFileName : selectedModelFileName();
   sequenceSummaries = (await api?.pet?.listClickSequences?.(target)) ?? [];
@@ -319,8 +466,8 @@ async function applyModelSpecificSettings(modelFileName: string | null): Promise
   el.playbackSpeedValue.textContent = config.playbackSpeed.toFixed(2);
   el.modelBrightness.value = String(config.modelBrightness);
   el.modelBrightnessValue.textContent = config.modelBrightness.toFixed(2);
+  updateModelResolutionReadout(config);
   await reloadSequenceSummaries(modelFileName);
-  renderPoolList();
   populateActiveSequenceSelect(config.clickAnimation.activeSequenceId);
   editingSequenceId = null;
   updateSequenceEditorVisibility();
@@ -802,6 +949,10 @@ function fillForm(config: PetDesktopConfig): void {
   el.modelBrightnessValue.textContent = config.modelBrightness.toFixed(2);
   el.posX.value = String(config.position.x);
   el.posY.value = String(config.position.y);
+  el.fpsMonitorEnabled.checked = config.fpsMonitorEnabled;
+  buildFpsMonitorPositionRadios(config.fpsMonitorPosition);
+  syncFpsMonitorPositionFieldset();
+  updateModelResolutionReadout(config);
   renderPoolList();
   populateActiveSequenceSelect(config.clickAnimation.activeSequenceId);
   editingSequenceId = null;
@@ -817,11 +968,13 @@ function readForm(): PetDesktopConfig {
     windowHeight: clampWindowHeight(Number(el.windowHeight.value)),
     modelScale: unapplyDisplayScaleFromModelScale(
       Number(el.modelScale.value),
-      displayScaleFactor
+      modelScaleDisplayFactor()
     ),
     sourceAnimationFps: clampSourceAnimationFps(Number(el.sourceAnimationFps.value)),
     playbackSpeed: clampPlaybackSpeed(Number(el.playbackSpeed.value)),
     modelBrightness: clampModelBrightness(Number(el.modelBrightness.value)),
+    fpsMonitorEnabled: el.fpsMonitorEnabled.checked,
+    fpsMonitorPosition: readFpsMonitorPositionFromUi(),
     position: {
       x: Math.round(Number(el.posX.value) || 0),
       y: Math.round(Number(el.posY.value) || 0),
@@ -881,6 +1034,10 @@ async function reloadSettingsAfterApply(applied: PetDesktopConfig): Promise<void
   el.playbackSpeedValue.textContent = applied.playbackSpeed.toFixed(2);
   el.modelBrightness.value = String(applied.modelBrightness);
   el.modelBrightnessValue.textContent = applied.modelBrightness.toFixed(2);
+  el.fpsMonitorEnabled.checked = applied.fpsMonitorEnabled;
+  buildFpsMonitorPositionRadios(applied.fpsMonitorPosition);
+  syncFpsMonitorPositionFieldset();
+  updateModelResolutionReadout(applied);
   el.posX.value = String(applied.position.x);
   el.posY.value = String(applied.position.y);
   await loadDisplays(applied.position.monitor);
@@ -915,10 +1072,12 @@ async function init(): Promise<void> {
   modelFileNames = (await api.pet.listModels?.()) ?? [];
   clipNames = (await api.pet.getAnimationClips()) ?? [];
   await refreshDisplayScaleFactor();
+  await refreshPetDisplayScaleFactor();
   const config = normalizePetDesktopConfig(await api.pet.getDesktopConfig());
   await reloadSequenceSummaries(config.modelFileName);
   savedConfig = config;
   await loadDisplays(config.position.monitor);
+  initSettingsNavigation();
   fillForm(config);
   bindLayoutLiveControls();
   startLivePolling();
@@ -932,9 +1091,21 @@ window.addEventListener('beforeunload', () => {
 });
 
 el.modelFile.addEventListener('change', () => {
-  void applyModelSpecificSettings(selectedModelFileName()).then(() => {
-    scheduleConfigPreview();
-  });
+  void (async () => {
+    const previousClips = clipNames;
+    await applyModelSpecificSettings(selectedModelFileName());
+    await applyConfigPreview();
+    clipNames = await waitForAnimationClipsAfterModelChange(previousClips);
+    renderPoolList();
+    populateActiveSequenceSelect(draft?.clickAnimation.activeSequenceId ?? null);
+    editingSequenceId = null;
+    updateSequenceEditorVisibility();
+  })();
+});
+
+el.fpsMonitorEnabled.addEventListener('change', () => {
+  syncFpsMonitorPositionFieldset();
+  scheduleConfigPreview();
 });
 
 el.modelScale.addEventListener('input', () => {
@@ -1063,7 +1234,7 @@ el.btnSave.addEventListener('click', () => {
         const saved = await saveCurrentSequenceFile();
         if (!saved) return;
       }
-      const config = readForm();
+      const config = await readFormForApply();
       const applied = normalizePetDesktopConfig(await api!.pet.setDesktopConfig(config));
       await reloadSettingsAfterApply(applied);
       setStatus('已保存并应用到宠物窗口');

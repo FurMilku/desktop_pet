@@ -21,6 +21,7 @@ const MikkTSpace = MikkTSpaceModule as {
   ) => Float32Array;
 };
 import { computeAutoFitScaleMultiplier } from '../../shared/config/model-autofit';
+import { applyDisplayScaleToModelScale } from '../../shared/config/display-scale';
 import { normalizeAnimationClipTiming, SOURCE_ANIMATION_FPS } from './clip-timing';
 import { isCombatLikeClipName } from './combat-clip-filter';
 import { fixMeshGameUvLayout } from './game-model-uv-fix';
@@ -148,8 +149,10 @@ export interface ModelLoadOptions {
   autoFit?: boolean;
   /** autoFit 时的目标最大尺寸（世界单位） */
   autoFitSize?: number;
-  /** 用户缩放倍率（相对 autoFit 后基准；加载时应在取景前应用） */
+  /** 持久化 stored 缩放（100% 基准；Windows 显示缩放在渲染器内换算） */
   modelScaleFactor?: number;
+  /** 宠物窗口所在显示器的 Windows 缩放倍率 */
+  displayScaleFactor?: number;
 }
 
 /**
@@ -239,6 +242,10 @@ export interface IPetRenderer {
   isRendering(): boolean;
   /** 获取当前 FPS */
   getFPS(): number;
+  /** 当前正在播放的 GLB 剪辑名（无则 null） */
+  getCurrentPlayingClipName(): string | null;
+  /** 模型绑定姿势包围盒尺寸（autoFit 前，模型空间） */
+  getModelBoundingSize(): { width: number; height: number; depth: number } | null;
   /** 检测屏幕坐标是否命中宠物模型（严格射线，用于点击/拖拽） */
   hitTest(clientX: number, clientY: number): boolean;
   /** 光标捕获用命中（严格射线，供主进程穿透切换） */
@@ -255,8 +262,10 @@ export interface IPetRenderer {
   playMenuAnimation(menuId: string): void;
   /** 点击互动动画配置（权重随机 / 序列） */
   setClickAnimationSettings(settings: ClickAnimationSettings): void;
-  /** 模型缩放倍率（相对 autoFit 后基准） */
+  /** 持久化 stored 缩放（100% 基准） */
   setModelScaleFactor(factor: number): void;
+  /** Windows 显示缩放倍率（与 stored 缩放合成运行时倍率） */
+  setRuntimeDisplayScaleFactor(factor: number): void;
   /** 模型整体亮度倍率 */
   setModelBrightness(factor: number): void;
   /** 动画源帧率（手游导出常用 30/60/120） */
@@ -283,6 +292,8 @@ export interface IPetRenderer {
   hasFlyDragCapability(): boolean;
   /** 模型加载完成后启动 callout → idle（切换模型时调用） */
   beginPresentationAfterModelLoad(): void;
+  /** 窗口布局确定后重算相机基准（须在 applyWindowLayout 之后、入场动画之前） */
+  finalizeModelCameraAfterLayout(): void;
   /** 从原始剪辑重新解析动画（改帧率后） */
   rebuildModelAnimationsFromRaw(): void;
   getSourceAnimationFps(): number;
@@ -403,7 +414,10 @@ export class PetRenderer implements IPetRenderer {
   private playableMenuClips: THREE.AnimationClip[] = [];
   /** autoFit 后的模型均匀缩放基准 */
   private baseModelScale = 1;
-  private modelScaleFactor = 1;
+  /** 持久化 stored 缩放（100% 基准） */
+  private storedUserModelScale = 1;
+  /** 宠物窗口所在显示器的 Windows 缩放倍率 */
+  private runtimeDisplayScaleFactor = 1;
   private modelBrightnessFactor = 1;
   /** 桌宠：柔和环境 + 正面主光，避免游戏场景式强对比 */
   private static readonly LIGHT_BASE_INTENSITY = {
@@ -542,6 +556,7 @@ export class PetRenderer implements IPetRenderer {
   private idleReturnTimer: ReturnType<typeof setTimeout> | null = null;
   private animationConfigs: Map<AnimationState, AnimationConfig> = new Map();
   private currentAction: THREE.AnimationAction | null = null;
+  private currentPlayingClipName: string | null = null;
   private currentAnimation: AnimationState | null = null;
 
   // 加载器
@@ -556,8 +571,11 @@ export class PetRenderer implements IPetRenderer {
   private cameraLocked = false;
   /** 绑定姿势下的最小相机距离（动画再大也只拉远、不比初始更近） */
   private baselineCameraDistance = 0;
-  /** 绑定姿势下包围盒最大轴向尺寸（相机自适应只补偿动画超出部分，不抵消用户缩放） */
-  private bindPoseBoundsMaxDim = 0;
+  /**
+   * 绑定姿势包围盒最大轴向尺寸（effective user scale = 1 时的模型空间基准）。
+   * 随 effectiveModelScaleFactor 线性放大，避免用户改缩放时 idle 重校准污染基准。
+   */
+  private bindPoseReferenceDim = 0;
   /** 平滑后的注视点 */
   private readonly adaptiveLookAt = new THREE.Vector3();
   /** 平滑后的相机距离 */
@@ -781,6 +799,16 @@ export class PetRenderer implements IPetRenderer {
     }
 
     this.currentAction = newAction;
+    this.notePlayingClip(newAction);
+  }
+
+  private notePlayingClip(action: THREE.AnimationAction | null): void {
+    if (!action) {
+      this.currentPlayingClipName = null;
+      return;
+    }
+    const clip = action.getClip();
+    this.currentPlayingClipName = clip?.name?.trim() ? clip.name : null;
   }
 
   /**
@@ -839,6 +867,9 @@ export class PetRenderer implements IPetRenderer {
       const scale = options.scale ?? 1;
       this.model.scale.set(scale, scale, scale);
 
+      // 手游 GLB（如裘卡）隐藏超大辅助网格，避免 autoFit/相机按错误体型取景
+      this.suppressAutofitOutlierMeshes(this.model);
+
       // 在绑定姿势下适配大小（避免动画拉伸后再缩放）
       if (options.autoFit) {
         this.fitModelToView(this.model, options.autoFitSize ?? 1.25);
@@ -871,27 +902,29 @@ export class PetRenderer implements IPetRenderer {
       this.modelBasePosition.copy(this.model.position);
       this.modelBaseRotationY = this.model.rotation.y;
       this.baseModelScale = this.model.scale.x;
-      this.modelScaleFactor = 1;
+      this.storedUserModelScale = 1;
       if (
         options.modelScaleFactor !== undefined &&
         Number.isFinite(options.modelScaleFactor) &&
         options.modelScaleFactor > 0
       ) {
-        this.modelScaleFactor = options.modelScaleFactor;
+        this.storedUserModelScale = options.modelScaleFactor;
+      }
+      if (
+        options.displayScaleFactor !== undefined &&
+        Number.isFinite(options.displayScaleFactor) &&
+        options.displayScaleFactor > 0
+      ) {
+        this.runtimeDisplayScaleFactor = options.displayScaleFactor;
       }
       this.applyModelScaleFactor();
-
-      // 相机须在 autoFit + 用户缩放倍率之后再取景，否则重载后画面里模型偏大
-      if (options.autoFit) {
-        this.frameCameraToModel(this.model, true);
-        this.refitCameraToAnimatedBounds(true);
-      } else {
-        this.resetCamera();
-      }
+      console.log(
+        `[PetRenderer] Applied model scale: stored=${this.storedUserModelScale}, display=${this.runtimeDisplayScaleFactor}, effective=${this.effectiveModelScaleFactor().toFixed(3)}, baseAutoFit=${this.baseModelScale.toFixed(3)}`
+      );
 
       this.resetFlyOrientationState();
       this.captureBindPoseLocks();
-      this.rebuildBindPoseBoundsReference();
+      this.captureBindPoseReferenceDim();
 
       // 创建动画混合器
       this.mixer = new THREE.AnimationMixer(this.model);
@@ -1487,6 +1520,65 @@ export class PetRenderer implements IPetRenderer {
   }
 
   /**
+   * 隐藏相对中位尺寸过大的辅助网格（仅影响渲染/autoFit，不删几何体）
+   */
+  private suppressAutofitOutlierMeshes(model: THREE.Object3D): number {
+    const meshes: THREE.Mesh[] = [];
+    const diagonals: number[] = [];
+
+    model.traverse((child) => {
+      if (!(child instanceof THREE.Mesh) || !child.visible || !child.geometry) {
+        return;
+      }
+
+      const materials = Array.isArray(child.material) ? child.material : [child.material];
+      const hasVisibleMaterial = materials.some(
+        (mat) => mat instanceof THREE.Material && mat.visible
+      );
+      if (!hasVisibleMaterial) {
+        return;
+      }
+
+      child.geometry.computeBoundingBox();
+      if (!child.geometry.boundingBox) {
+        return;
+      }
+
+      const meshBox = child.geometry.boundingBox.clone();
+      meshBox.applyMatrix4(child.matrixWorld);
+      meshes.push(child);
+      diagonals.push(meshBox.getSize(new THREE.Vector3()).length());
+    });
+
+    if (meshes.length === 0) {
+      return 0;
+    }
+
+    const sorted = [...diagonals].sort((a, b) => a - b);
+    const median = sorted[Math.floor(sorted.length / 2)] ?? sorted[0]!;
+    const outlierLimit = Math.max(
+      median * PetRenderer.AUTOFIT_BBOX_OUTLIER_RATIO,
+      median + 1e-6
+    );
+
+    let hidden = 0;
+    for (let i = 0; i < meshes.length; i++) {
+      if (diagonals[i]! > outlierLimit) {
+        meshes[i]!.visible = false;
+        hidden++;
+      }
+    }
+
+    if (hidden > 0) {
+      console.log(
+        `[PetRenderer] Hidden ${hidden} outlier mesh(es) for autoFit (median diag ${median.toFixed(3)})`
+      );
+    }
+
+    return hidden;
+  }
+
+  /**
    * 桌面宠物用剪辑：去掉根骨骼位移/缩放，保留子骨骼 position+rotation（全删 rotation 会导致穿模变形）
    */
   private sanitizeClipForDesktopPet(clip: THREE.AnimationClip): THREE.AnimationClip {
@@ -1609,15 +1701,20 @@ export class PetRenderer implements IPetRenderer {
     }
   }
 
-  /** 记录当前绑定姿势下的包围盒基准，供相机/命中仅补偿动画溢出 */
-  private rebuildBindPoseBoundsReference(): void {
+  /** 绑定姿势下、单位用户缩放时的包围盒最大轴向尺寸（加载/定稿相机时捕获一次） */
+  private captureBindPoseReferenceDim(): void {
     if (!this.model) {
-      this.bindPoseBoundsMaxDim = 0;
+      this.bindPoseReferenceDim = 0;
       return;
     }
     this.model.updateMatrixWorld(true);
     const size = this.getMeshBoundingBox(this.model).getSize(new THREE.Vector3());
-    this.bindPoseBoundsMaxDim = Math.max(size.x, size.y, size.z);
+    const effective = Math.max(this.effectiveModelScaleFactor(), 1e-6);
+    this.bindPoseReferenceDim = Math.max(size.x, size.y, size.z) / effective;
+  }
+
+  private expectedBindPoseMaxDim(): number {
+    return this.bindPoseReferenceDim * this.effectiveModelScaleFactor();
   }
 
   private isRaycastableMesh(object: THREE.Object3D): boolean {
@@ -1693,6 +1790,7 @@ export class PetRenderer implements IPetRenderer {
     this.walkDragClips = { walk: null, run: null, idle: null };
     this.walkDragLocomotion = 'walk';
     this.currentAction = null;
+    this.currentPlayingClipName = null;
     this.currentAnimation = null;
 
     const sources = this.pristineModelClips.map((c) => c.clone());
@@ -1825,7 +1923,9 @@ export class PetRenderer implements IPetRenderer {
 
     const box = this.getMeshBoundingBox(model);
     const size = box.getSize(new THREE.Vector3());
-    const autoFitScale = computeAutoFitScaleMultiplier(size, targetSize);
+    const autoFitScale = computeAutoFitScaleMultiplier(size, targetSize, {
+      allowUpscale: true,
+    });
     if (autoFitScale !== 1) {
       model.scale.multiplyScalar(autoFitScale);
     }
@@ -1853,6 +1953,19 @@ export class PetRenderer implements IPetRenderer {
     const distX = size.x / 2 / halfTanH;
     const distZ = size.z / 2 / halfTanH;
     return Math.max(distY, distX, distZ) * PetRenderer.CAMERA_DISTANCE_PADDING;
+  }
+
+  /**
+   * 动画相对绑定姿势的溢出倍率。绑定基准按 effective user scale 推算，
+   * 用户拖滑杆改缩放时不更新基准，相机不会把缩放抵消掉。
+   */
+  private computeAnimatedBoundsOverflow(size: THREE.Vector3): number {
+    const bindDim = this.expectedBindPoseMaxDim();
+    if (bindDim <= 1e-6) {
+      return 1;
+    }
+    const currentDim = Math.max(size.x, size.y, size.z);
+    return Math.max(1, currentDim / bindDim);
   }
 
   /**
@@ -2059,8 +2172,11 @@ export class PetRenderer implements IPetRenderer {
     root.updateMatrixWorld(true);
     const box = this.getMeshBoundingBox(root);
     const size = box.getSize(new THREE.Vector3());
-    const needed = this.computeCameraDistanceForSize(size);
-    this.flyCameraDistance = Math.max(this.baselineCameraDistance, needed * 1.06);
+    const overflow = this.computeAnimatedBoundsOverflow(size);
+    this.flyCameraDistance = Math.max(
+      this.baselineCameraDistance * overflow * 1.06,
+      this.baselineCameraDistance
+    );
     this.smoothedCameraDistance = this.flyCameraDistance;
     this.adaptiveLookAt.copy(this.frozenLookAt);
     this.applyFlyCameraLock();
@@ -2092,8 +2208,8 @@ export class PetRenderer implements IPetRenderer {
     root.updateMatrixWorld(true);
     const box = this.getMeshBoundingBox(root);
     const size = box.getSize(new THREE.Vector3());
-    const needed = this.computeCameraDistanceForSize(size);
-    const target = Math.max(this.baselineCameraDistance, needed);
+    const overflow = this.computeAnimatedBoundsOverflow(size);
+    const target = this.baselineCameraDistance * overflow;
     this.flyCameraDistance = THREE.MathUtils.lerp(
       this.flyCameraDistance,
       target,
@@ -2333,20 +2449,18 @@ export class PetRenderer implements IPetRenderer {
       return;
     }
 
-    this.model.updateMatrixWorld(true);
-    const box = this.getMeshBoundingBox(this.model);
+    const root = this.getOrientedRoot() ?? this.model;
+    root.updateMatrixWorld(true);
+    const box = this.getMeshBoundingBox(root);
     if (box.isEmpty()) {
       return;
     }
 
     const center = box.getCenter(new THREE.Vector3());
     const size = box.getSize(new THREE.Vector3());
-    const currentMaxDim = Math.max(size.x, size.y, size.z);
-    const overflowScale =
-      this.bindPoseBoundsMaxDim > 1e-6
-        ? Math.max(1, currentMaxDim / this.bindPoseBoundsMaxDim)
-        : 1;
-    const targetDistance = this.baselineCameraDistance * overflowScale;
+    // 仅随动画溢出拉远相机；用户 modelScale 改变 bindPose 基准时不应抵消缩放
+    const overflow = this.computeAnimatedBoundsOverflow(size);
+    const targetDistance = this.baselineCameraDistance * overflow;
 
     if (immediate) {
       this.adaptiveLookAt.copy(center);
@@ -2921,6 +3035,7 @@ export class PetRenderer implements IPetRenderer {
 
     window.setTimeout(() => {
       this.idleBlendInProgress = false;
+      this.recalibrateIdleCameraFromCurrentPose();
     }, duration * 1000 + 80);
 
     console.log(
@@ -2931,6 +3046,69 @@ export class PetRenderer implements IPetRenderer {
   /**
    * 模型加载或切换后启动展示（渲染循环已运行时也生效）
    */
+  /** 待机 crossfade 结束后，按当前 idle 姿态重校准相机基准（切换模型后 callout→idle 尤其需要） */
+  private recalibrateIdleCameraFromCurrentPose(): void {
+    if (
+      !this.model ||
+      !this.camera ||
+      !this.cameraLocked ||
+      this.dragWalkActive ||
+      this.dragFlyPhase !== 'idle'
+    ) {
+      return;
+    }
+
+    const root = this.getOrientedRoot();
+    if (!root) {
+      return;
+    }
+
+    root.updateMatrixWorld(true);
+    const box = this.getMeshBoundingBox(root);
+    if (box.isEmpty()) {
+      return;
+    }
+
+    const size = box.getSize(new THREE.Vector3());
+    const overflow = this.computeAnimatedBoundsOverflow(size);
+    const nextBaseline = this.baselineCameraDistance * overflow;
+    if (Math.abs(nextBaseline - this.baselineCameraDistance) < 0.001) {
+      this.adaptCameraToAnimatedBounds(true);
+      return;
+    }
+
+    this.baselineCameraDistance = nextBaseline;
+    this.adaptCameraToAnimatedBounds(true);
+    console.log(
+      `[PetRenderer] Idle camera recalibrated: baseline=${this.baselineCameraDistance.toFixed(2)}, bindDim=${this.expectedBindPoseMaxDim().toFixed(3)}`
+    );
+  }
+
+  finalizeModelCameraAfterLayout(): void {
+    if (!this.model || !this.camera) {
+      return;
+    }
+
+    const bounds = this.config.container.getBoundingClientRect();
+    const width = bounds.width > 0 ? bounds.width : this.config.width;
+    const height = bounds.height > 0 ? bounds.height : this.config.height;
+    if (width > 0 && height > 0 && this.renderer) {
+      this.config.width = width;
+      this.config.height = height;
+      this.camera.aspect = width / height;
+      this.camera.updateProjectionMatrix();
+      this.renderer.setSize(width, height);
+    }
+
+    this.frameCameraToModel(this.model, true);
+    this.captureBindPoseReferenceDim();
+    this.refitCameraToAnimatedBounds(true);
+
+    console.log(
+      `[PetRenderer] Camera finalized: baseline=${this.baselineCameraDistance.toFixed(2)}, bindDim=${this.expectedBindPoseMaxDim().toFixed(3)}, effective=${this.effectiveModelScaleFactor().toFixed(3)}, baseAutoFit=${this.baseModelScale.toFixed(3)}`
+    );
+  }
+
   beginPresentationAfterModelLoad(): void {
     this.startupPresentationDone = false;
     if (!this.mixer || !this.model) {
@@ -2955,6 +3133,18 @@ export class PetRenderer implements IPetRenderer {
 
     this.playStartupPresentation();
     this.refitCameraToAnimatedBounds(true);
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (
+          this.currentAnimation === 'idle' &&
+          !this.idleBlendInProgress &&
+          this.dragFlyPhase === 'idle' &&
+          !this.dragWalkActive
+        ) {
+          this.recalibrateIdleCameraFromCurrentPose();
+        }
+      });
+    });
   }
 
   /**
@@ -3105,10 +3295,24 @@ export class PetRenderer implements IPetRenderer {
     if (!Number.isFinite(factor) || factor <= 0) {
       return;
     }
-    this.modelScaleFactor = factor;
+    this.storedUserModelScale = factor;
     this.applyModelScaleFactor();
-    // 用户缩放应改变画面大小；勿按全包围盒重算相机距离（会抵消缩放）
-    this.rebuildBindPoseBoundsReference();
+    // 用户缩放应改变画面大小；绑定姿势基准不变，仅 effective 倍率参与 expectedBindPoseMaxDim
+  }
+
+  setRuntimeDisplayScaleFactor(factor: number): void {
+    if (!Number.isFinite(factor) || factor <= 0) {
+      return;
+    }
+    this.runtimeDisplayScaleFactor = factor;
+    this.applyModelScaleFactor();
+  }
+
+  private effectiveModelScaleFactor(): number {
+    return applyDisplayScaleToModelScale(
+      this.storedUserModelScale,
+      this.runtimeDisplayScaleFactor
+    );
   }
 
   setModelBrightness(factor: number): void {
@@ -3196,7 +3400,7 @@ export class PetRenderer implements IPetRenderer {
     if (!this.model) {
       return;
     }
-    const s = this.baseModelScale * this.modelScaleFactor;
+    const s = this.baseModelScale * this.effectiveModelScaleFactor();
     this.model.scale.set(s, s, s);
   }
 
@@ -3385,7 +3589,12 @@ export class PetRenderer implements IPetRenderer {
     }
 
     const fallback = this.getInteractionFallbackClipNames();
-    const steps = resolveClickAnimationSteps(this.clickAnimationSettings, fallback);
+    const availableClips = this.getAllAnimationClipNames();
+    const steps = resolveClickAnimationSteps(
+      this.clickAnimationSettings,
+      fallback,
+      availableClips
+    );
     if (steps.length === 0) {
       console.warn('[PetRenderer] No click animation steps configured');
       return;
@@ -3937,6 +4146,25 @@ export class PetRenderer implements IPetRenderer {
     return this.currentFPS;
   }
 
+  getCurrentPlayingClipName(): string | null {
+    return this.currentPlayingClipName;
+  }
+
+  getModelBoundingSize(): { width: number; height: number; depth: number } | null {
+    if (!this.model) {
+      return null;
+    }
+    const size = this.getMeshBoundingBox(this.model).getSize(new THREE.Vector3());
+    if (size.x <= 0 || size.y <= 0 || size.z <= 0) {
+      return null;
+    }
+    return {
+      width: Math.round(size.x * 1000) / 1000,
+      height: Math.round(size.y * 1000) / 1000,
+      depth: Math.round(size.z * 1000) / 1000,
+    };
+  }
+
   /**
    * 调整渲染器大小
    */
@@ -3948,12 +4176,22 @@ export class PetRenderer implements IPetRenderer {
     this.config.width = width;
     this.config.height = height;
 
+    const prevAspect = this.camera.aspect;
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
 
     this.renderer.setSize(width, height);
 
-    if (this.cameraLocked) {
+    if (this.cameraLocked && this.model) {
+      const aspectChanged = Math.abs(prevAspect - this.camera.aspect) > 1e-6;
+      if (
+        aspectChanged &&
+        this.dragFlyPhase === 'idle' &&
+        !this.dragWalkActive
+      ) {
+        this.frameCameraToModel(this.model, true);
+        this.captureBindPoseReferenceDim();
+      }
       this.adaptCameraToAnimatedBounds(true);
     }
 
@@ -4034,6 +4272,7 @@ export class PetRenderer implements IPetRenderer {
     this.flyCameraDistance = 0;
     this.resetViewportResizeThrottle();
     this.currentAction = null;
+    this.currentPlayingClipName = null;
     this.currentAnimation = null;
     this.frozenLookAt = null;
     this.frozenCameraPosition = null;
@@ -4042,10 +4281,11 @@ export class PetRenderer implements IPetRenderer {
     this.smoothedCameraDistance = 0;
     this.adaptiveLookAt.set(0, 0, 0);
     this.bindPoseLocks.clear();
-    this.bindPoseBoundsMaxDim = 0;
+    this.bindPoseReferenceDim = 0;
     this.modelBasePosition.set(0, 0, 0);
     this.baseModelScale = 1;
-    this.modelScaleFactor = 1;
+    this.storedUserModelScale = 1;
+    // 保留 runtimeDisplayScaleFactor：dispose 后紧接着会 load 新模型，避免 DPI 倍率被重置
   }
 
   /**

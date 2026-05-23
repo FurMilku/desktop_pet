@@ -92,12 +92,40 @@
       border: 1px dashed rgba(255, 255, 255, 0.35);
       box-sizing: border-box;
     }
+
+    #fps-monitor {
+      position: absolute;
+      z-index: 100;
+      padding: 4px 8px;
+      font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
+      font-size: 11px;
+      line-height: 1.35;
+      color: #e8ffe8;
+      background: rgba(0, 0, 0, 0.55);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      border-radius: 4px;
+      pointer-events: none;
+      white-space: pre;
+      font-variant-numeric: tabular-nums;
+      display: none;
+    }
+
+    #fps-monitor.is-visible {
+      display: block;
+    }
+
+    #fps-monitor.pos-top-left { top: 8px; left: 8px; }
+    #fps-monitor.pos-top-right { top: 8px; right: 8px; }
+    #fps-monitor.pos-bottom-left { bottom: 8px; left: 8px; }
+    #fps-monitor.pos-bottom-right { bottom: 8px; right: 8px; }
   </style>
 </head>
 <body>
   <div id="app">
     <!-- Three.js 渲染目标 -->
     <div id="pet-container"></div>
+    
+    <div id="fps-monitor" aria-hidden="true"></div>
     
     <!-- 加载状态指示 -->
     <div id="loading" class="visible">正在加载宠物...</div>

@@ -1,5 +1,10 @@
 import * as fs from 'fs';
 import {
+  migrateLegacySequencesForModel,
+  sanitizeClickAnimationForModel,
+} from './click-sequence-store';
+import { DEFAULT_MODEL_SCALE } from '../shared/config/pet-desktop-settings';
+import {
   createDefaultPetModelSettings,
   normalizePetModelSettings,
   petModelSettingsForStorage,
@@ -30,7 +35,26 @@ export function loadPetModelSettings(
 
   try {
     const raw = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as Partial<PetModelSettings>;
-    return normalizePetModelSettings(raw);
+    let settings = normalizePetModelSettings(raw);
+    migrateLegacySequencesForModel(modelFileName, settings.clickAnimation);
+    const sanitizedClick = sanitizeClickAnimationForModel(
+      settings.clickAnimation,
+      modelFileName
+    );
+    const clickChanged =
+      sanitizedClick.activeSequenceId !== settings.clickAnimation.activeSequenceId ||
+      sanitizedClick.pool.length !== settings.clickAnimation.pool.length ||
+      sanitizedClick.pool.some(
+        (e, i) => e.clipName !== settings.clickAnimation.pool[i]?.clipName
+      );
+    if (clickChanged) {
+      settings = { ...settings, clickAnimation: sanitizedClick };
+      savePetModelSettings(modelFileName, settings);
+      logger.info('Removed invalid cross-model click sequence references', {
+        modelFileName,
+      });
+    }
+    return settings;
   } catch (error) {
     logger.warn('Failed to load model settings, using defaults', { filePath, error });
     return createDefaultPetModelSettings();
@@ -46,10 +70,35 @@ export function savePetModelSettings(
     throw new Error('Model settings path unavailable');
   }
 
-  const normalized = petModelSettingsForStorage(normalizePetModelSettings(settings));
-  fs.writeFileSync(filePath, JSON.stringify(normalized, null, 2), 'utf-8');
+  const normalized = normalizePetModelSettings(settings);
+  const sanitizedClick = sanitizeClickAnimationForModel(
+    normalized.clickAnimation,
+    modelFileName
+  );
+  const toStore = petModelSettingsForStorage({
+    ...normalized,
+    clickAnimation: sanitizedClick,
+  });
+  fs.writeFileSync(filePath, JSON.stringify(toStore, null, 2), 'utf-8');
   logger.info('Model settings saved', { filePath });
-  return normalized;
+  return toStore;
+}
+
+/** 仅更新模型 JSON 中的包围盒尺寸字段 */
+export function updatePetModelResolution(
+  modelFileName: string | null | undefined,
+  resolution: { width: number; height: number; depth: number }
+): void {
+  const filePath = resolvePetModelSettingsFilePath(modelFileName);
+  if (!filePath) {
+    return;
+  }
+
+  const current = loadPetModelSettings(modelFileName);
+  savePetModelSettings(modelFileName, {
+    ...current,
+    modelResolution: resolution,
+  });
 }
 
 /** 将旧版数据库中的模型字段迁移到当前模型的 JSON（仅当 JSON 尚不存在） */
@@ -68,7 +117,7 @@ export function migrateLegacyModelFieldsToJson(
 
   savePetModelSettings(modelFileName, {
     ...createDefaultPetModelSettings(),
-    modelScale: legacy.modelScale ?? 1,
+    modelScale: legacy.modelScale ?? DEFAULT_MODEL_SCALE,
     modelBrightness: legacy.modelBrightness ?? 1,
     clickAnimation: legacy.clickAnimation ?? createDefaultPetModelSettings().clickAnimation,
   });

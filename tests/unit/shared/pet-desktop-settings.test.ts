@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   clampModelBrightness,
   createDefaultPetDesktopConfig,
+  DEFAULT_MODEL_SCALE,
   normalizePetDesktopConfig,
 } from '../../../src/shared/config/pet-desktop-settings';
 
@@ -10,12 +11,23 @@ describe('pet-desktop-settings', () => {
     expect(createDefaultPetDesktopConfig().modelFileName).toBeNull();
   });
 
+  it('defaults modelScale to baseline 0.3 at 100% display', () => {
+    expect(createDefaultPetDesktopConfig().modelScale).toBe(DEFAULT_MODEL_SCALE);
+    expect(DEFAULT_MODEL_SCALE).toBe(0.3);
+  });
+
   it('defaults modelBrightness to 1', () => {
     expect(createDefaultPetDesktopConfig().modelBrightness).toBe(1);
   });
 
   it('defaults playbackSpeed to 1', () => {
     expect(createDefaultPetDesktopConfig().playbackSpeed).toBe(1);
+  });
+
+  it('defaults fps monitor to disabled top-left', () => {
+    const config = createDefaultPetDesktopConfig();
+    expect(config.fpsMonitorEnabled).toBe(false);
+    expect(config.fpsMonitorPosition).toBe('top-left');
   });
 
   it('normalizes modelFileName', () => {

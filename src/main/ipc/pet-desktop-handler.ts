@@ -1,7 +1,13 @@
 import { ipcMain, IpcMainInvokeEvent } from 'electron';
-import type { PetDesktopConfig } from '../../shared/config/pet-desktop-settings';
-import { normalizePetDesktopConfig } from '../../shared/config/pet-desktop-settings';
-import { applyDisplayScaleToModelScale } from '../../shared/config/display-scale';
+import {
+  DEFAULT_MODEL_SCALE,
+  normalizePetDesktopConfig,
+  type PetDesktopConfig,
+} from '../../shared/config/pet-desktop-settings';
+import {
+  applyDisplayScaleToModelScale,
+  sanitizeIncomingModelScale,
+} from '../../shared/config/display-scale';
 import { emitToWindow } from '../ipc-handlers';
 import { getLogger } from '../logger';
 import { getWindowManager } from '../window-manager';
@@ -18,6 +24,7 @@ import {
   getCachedAnimationClipNames,
   loadPetDesktopConfig,
   loadPetDesktopConfigForModel,
+  persistModelResolutionForFile,
   savePetDesktopConfig,
   setCachedAnimationClipNames,
 } from '../pet-desktop-config-store';
@@ -29,7 +36,12 @@ const logger = getLogger('pet-desktop-handler');
 export interface PetLiveLayout {
   windowWidth: number;
   windowHeight: number;
+  /** 宠物窗口实际生效的显示缩放（含 Windows 显示缩放） */
   modelScale: number;
+  /** 持久化 stored 缩放（不含 Windows 显示缩放） */
+  storedModelScale: number;
+  /** 宠物窗口所在显示器的 Windows 缩放倍率 */
+  petDisplayScaleFactor: number;
   modelBrightness: number;
   position: { x: number; y: number; monitor: number };
 }
@@ -49,10 +61,11 @@ export const PetDesktopChannels = {
   CREATE_CLICK_SEQUENCE: 'pet:create-click-sequence',
   LIST_MODELS: 'pet:list-models',
   GET_CONFIG_FOR_MODEL: 'pet:get-config-for-model',
+  REPORT_MODEL_RESOLUTION: 'pet:report-model-resolution',
 } as const;
 
 /** 最近一次预览/应用时的模型缩放（主进程缓存，供设置窗实时显示） */
-let liveModelScale = 1;
+let liveModelScale = DEFAULT_MODEL_SCALE;
 let liveModelBrightness = 1;
 
 async function handleGetDesktopConfig(): Promise<PetDesktopConfig> {
@@ -66,7 +79,7 @@ async function handleSetDesktopConfig(
   _event: IpcMainInvokeEvent,
   config: PetDesktopConfig
 ): Promise<PetDesktopConfig> {
-  const saved = savePetDesktopConfig(config);
+  const saved = savePetDesktopConfig(normalizePetDesktopConfig(config));
   liveModelScale = saved.modelScale;
   liveModelBrightness = saved.modelBrightness;
   emitPetDesktopConfigToMainWindow(saved, 'pet:desktop-config-changed');
@@ -74,11 +87,60 @@ async function handleSetDesktopConfig(
   return saved;
 }
 
+function sanitizeDesktopConfigModelScale(
+  incoming: PetDesktopConfig,
+  petDisplayScale: number,
+  options?: { referenceModelFileName?: string | null }
+): PetDesktopConfig {
+  const normalized = normalizePetDesktopConfig(incoming);
+  const referenceModel =
+    options?.referenceModelFileName !== undefined
+      ? options.referenceModelFileName
+      : loadPetDesktopConfig().modelFileName;
+  const forModel = loadPetDesktopConfigForModel(normalized.modelFileName);
+  const switchingModel = normalized.modelFileName !== referenceModel;
+  const modelScale = sanitizeIncomingModelScale(
+    normalized.modelScale,
+    forModel.modelScale,
+    petDisplayScale,
+    { switchingModel }
+  );
+
+  if (switchingModel || modelScale !== normalized.modelScale) {
+    return normalizePetDesktopConfig({
+      ...normalized,
+      modelScale,
+      ...(switchingModel
+        ? {
+            modelBrightness: forModel.modelBrightness,
+            sourceAnimationFps: forModel.sourceAnimationFps,
+            playbackSpeed: forModel.playbackSpeed,
+          }
+        : {}),
+    });
+  }
+
+  return normalized;
+}
+
+function sanitizePreviewDesktopConfig(
+  incoming: PetDesktopConfig,
+  petDisplayScale: number
+): PetDesktopConfig {
+  const active = loadPetDesktopConfig();
+  return sanitizeDesktopConfigModelScale(incoming, petDisplayScale, {
+    referenceModelFileName: active.modelFileName,
+  });
+}
+
 async function handlePreviewDesktopConfig(
   _event: IpcMainInvokeEvent,
   config: PetDesktopConfig
 ): Promise<PetLiveLayout> {
-  const normalized = enrichPetDesktopConfig(normalizePetDesktopConfig(config));
+  const petDisplayScale = getWindowManager().getCurrentDisplay().scaleFactor;
+  const normalized = enrichPetDesktopConfig(
+    sanitizePreviewDesktopConfig(config, petDisplayScale)
+  );
   liveModelScale = normalized.modelScale;
   liveModelBrightness = normalized.modelBrightness;
   emitPetDesktopConfigToMainWindow(normalized, 'pet:desktop-config-preview');
@@ -100,6 +162,8 @@ export function getLiveLayoutFromMainWindow(): PetLiveLayout {
     windowWidth: state.size.width,
     windowHeight: state.size.height,
     modelScale: applyDisplayScaleToModelScale(liveModelScale, displayScale),
+    storedModelScale: liveModelScale,
+    petDisplayScaleFactor: displayScale,
     modelBrightness: liveModelBrightness,
     position: {
       x: state.position.x,
@@ -185,6 +249,39 @@ async function handleGetConfigForModel(
   return enrichPetDesktopConfig(loadPetDesktopConfigForModel(name));
 }
 
+async function handleReportModelResolution(
+  _event: IpcMainInvokeEvent,
+  payload: {
+    modelFileName?: string | null;
+    width?: number;
+    height?: number;
+    depth?: number;
+  }
+): Promise<void> {
+  const width = Number(payload?.width);
+  const height = Number(payload?.height);
+  const depth = Number(payload?.depth);
+  if (
+    !Number.isFinite(width) ||
+    !Number.isFinite(height) ||
+    !Number.isFinite(depth) ||
+    width <= 0 ||
+    height <= 0 ||
+    depth <= 0
+  ) {
+    return;
+  }
+  const modelFileName =
+    typeof payload?.modelFileName === 'string' && payload.modelFileName.trim()
+      ? payload.modelFileName.trim()
+      : loadPetDesktopConfig().modelFileName;
+  persistModelResolutionForFile(modelFileName, {
+    width,
+    height,
+    depth,
+  });
+}
+
 export function registerPetDesktopHandlers(): void {
   ipcMain.handle(PetDesktopChannels.GET_DESKTOP_CONFIG, handleGetDesktopConfig);
   ipcMain.handle(PetDesktopChannels.SET_DESKTOP_CONFIG, handleSetDesktopConfig);
@@ -200,6 +297,7 @@ export function registerPetDesktopHandlers(): void {
   ipcMain.handle(PetDesktopChannels.CREATE_CLICK_SEQUENCE, handleCreateClickSequence);
   ipcMain.handle(PetDesktopChannels.LIST_MODELS, handleListModels);
   ipcMain.handle(PetDesktopChannels.GET_CONFIG_FOR_MODEL, handleGetConfigForModel);
+  ipcMain.handle(PetDesktopChannels.REPORT_MODEL_RESOLUTION, handleReportModelResolution);
   logger.info('Pet desktop config IPC handlers registered');
 }
 
@@ -218,4 +316,5 @@ export function unregisterPetDesktopHandlers(): void {
   ipcMain.removeHandler(PetDesktopChannels.CREATE_CLICK_SEQUENCE);
   ipcMain.removeHandler(PetDesktopChannels.LIST_MODELS);
   ipcMain.removeHandler(PetDesktopChannels.GET_CONFIG_FOR_MODEL);
+  ipcMain.removeHandler(PetDesktopChannels.REPORT_MODEL_RESOLUTION);
 }

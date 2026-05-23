@@ -101,9 +101,35 @@ function findModelInDir(dir: string, preferredFileName?: string | null): string 
 /**
  * 解析磁盘上的模型绝对路径
  */
-export const CLICK_SEQUENCES_DIR_NAME = 'click-sequences';
+/** @deprecated 旧版共用目录名，仅用于迁移 */
+export const LEGACY_SHARED_CLICK_SEQUENCES_DIR = 'click-sequences';
 
-export const PET_MODEL_SETTINGS_SUFFIX = '.pet-settings.json';
+/** 与 {basename}.pet-settings.json 对应：{basename}.click-sequences */
+export const CLICK_SEQUENCES_DIR_SUFFIX = '.click-sequences';
+
+/**
+ * 点击动画序列 JSON：与 .glb 同目录，{basename}.click-sequences/{id}.json
+ * （不再使用 models/click-sequences/ 共用目录，避免裘卡等模型的序列被其它模型误用）
+ */
+export function resolveClickSequencesDirectory(modelFileName?: string | null): string | null {
+  const glbPath = resolvePetModelFilePath(modelFileName);
+  if (!glbPath) {
+    return null;
+  }
+  const base = path.basename(glbPath, path.extname(glbPath));
+  return path.join(path.dirname(glbPath), `${base}${CLICK_SEQUENCES_DIR_SUFFIX}`);
+}
+
+/** 旧版共用目录：{models}/click-sequences（迁移用） */
+export function resolveLegacySharedClickSequencesDirectory(
+  modelFileName?: string | null
+): string | null {
+  const modelDir = resolvePetModelDirectory(modelFileName);
+  if (!modelDir) {
+    return null;
+  }
+  return path.join(modelDir, LEGACY_SHARED_CLICK_SEQUENCES_DIR);
+}
 
 /**
  * 各模型独立设置文件：与 .glb 同目录，名为 {basename}.pet-settings.json
@@ -119,23 +145,14 @@ export function resolvePetModelSettingsFilePath(
   return path.join(path.dirname(glbPath), `${base}${PET_MODEL_SETTINGS_SUFFIX}`);
 }
 
+export const PET_MODEL_SETTINGS_SUFFIX = '.pet-settings.json';
+
 /**
  * 当前加载的 .glb 所在目录（模型文件夹）
  */
 export function resolvePetModelDirectory(modelFileName?: string | null): string | null {
   const filePath = resolvePetModelFilePath(modelFileName);
   return filePath ? path.dirname(filePath) : null;
-}
-
-/**
- * 点击动画序列 JSON 存放目录：{模型目录}/click-sequences
- */
-export function resolveClickSequencesDirectory(modelFileName?: string | null): string | null {
-  const modelDir = resolvePetModelDirectory(modelFileName);
-  if (!modelDir) {
-    return null;
-  }
-  return path.join(modelDir, CLICK_SEQUENCES_DIR_NAME);
 }
 
 export function resolvePetModelFilePath(modelFileName?: string | null): string | null {

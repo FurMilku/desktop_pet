@@ -16,13 +16,20 @@ import {
 
 } from '../shared/config/click-animation-sequence-file';
 
-import type { ClickAnimationSequenceStep } from '../shared/config/pet-desktop-settings';
+import type {
+  ClickAnimationSequenceStep,
+  ClickAnimationSettings,
+} from '../shared/config/pet-desktop-settings';
+import { parseSequencePoolKey } from '../shared/config/pet-desktop-settings';
 
 import { getLogger } from './logger';
 
 import { loadPetDesktopConfig } from './pet-desktop-config-store';
 
-import { resolveClickSequencesDirectory } from './utils/pet-model-path';
+import {
+  resolveClickSequencesDirectory,
+  resolveLegacySharedClickSequencesDirectory,
+} from './utils/pet-model-path';
 
 
 
@@ -54,7 +61,87 @@ function resolveModelFileName(modelFileName?: string | null): string | null {
 
 const SAFE_ID = /^[\w-]+$/;
 
+export function collectReferencedSequenceIds(
+  clickAnimation: Pick<ClickAnimationSettings, 'pool' | 'activeSequenceId'>
+): string[] {
+  const ids = new Set<string>();
+  if (clickAnimation.activeSequenceId?.trim()) {
+    ids.add(clickAnimation.activeSequenceId.trim());
+  }
+  for (const entry of clickAnimation.pool) {
+    const seqId = parseSequencePoolKey(entry.clipName);
+    if (seqId) {
+      ids.add(seqId);
+    }
+  }
+  return [...ids];
+}
 
+/** 将旧版共用 click-sequences/ 中本模型引用的序列复制到 {basename}.click-sequences/ */
+export function migrateLegacySequencesForModel(
+  modelFileName: string | null | undefined,
+  clickAnimation: Pick<ClickAnimationSettings, 'pool' | 'activeSequenceId'>
+): void {
+  const legacyDir = resolveLegacySharedClickSequencesDirectory(modelFileName);
+  const newDir = resolveClickSequencesDirectory(modelFileName);
+  if (!legacyDir || !newDir || !fs.existsSync(legacyDir)) {
+    return;
+  }
+
+  const poolSeqIds = new Set(
+    clickAnimation.pool
+      .map((e) => parseSequencePoolKey(e.clipName))
+      .filter((id): id is string => !!id)
+  );
+
+  for (const id of collectReferencedSequenceIds(clickAnimation)) {
+    // 仅迁移随机池 seq: 引用的序列；避免 activeSequenceId 误指共用目录时被复制到错误模型
+    if (!poolSeqIds.has(id)) {
+      continue;
+    }
+    if (!SAFE_ID.test(id)) {
+      continue;
+    }
+    const src = path.join(legacyDir, `${id}.json`);
+    const dest = path.join(newDir, `${id}.json`);
+    if (fs.existsSync(src) && !fs.existsSync(dest)) {
+      fs.mkdirSync(newDir, { recursive: true });
+      fs.copyFileSync(src, dest);
+      logger.info('Migrated click sequence from shared folder to per-model dir', {
+        id,
+        modelFileName,
+      });
+    }
+  }
+}
+
+/** 移除指向其它模型共用目录/本模型无文件的序列引用 */
+export function sanitizeClickAnimationForModel(
+  clickAnimation: ClickAnimationSettings,
+  modelFileName?: string | null
+): ClickAnimationSettings {
+  const pool = clickAnimation.pool.filter((entry) => {
+    const seqId = parseSequencePoolKey(entry.clipName);
+    if (!seqId) {
+      return true;
+    }
+    const filePath = sequenceFilePath(seqId, modelFileName);
+    return !!filePath && fs.existsSync(filePath);
+  });
+
+  let activeSequenceId = clickAnimation.activeSequenceId;
+  if (activeSequenceId) {
+    const filePath = sequenceFilePath(activeSequenceId, modelFileName);
+    if (!filePath || !fs.existsSync(filePath)) {
+      activeSequenceId = null;
+    }
+  }
+
+  return {
+    pool,
+    activeSequenceId,
+  };
+}
 
 function ensureSequencesDirectory(modelFileName?: string | null): string | null {
 

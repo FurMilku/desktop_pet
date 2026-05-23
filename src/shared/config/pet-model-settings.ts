@@ -10,6 +10,39 @@ import {
 
 export const PET_MODEL_SETTINGS_VERSION = 1;
 
+/** 模型绑定姿势包围盒尺寸（单位：模型空间，autoFit 前） */
+export interface ModelResolution {
+  width: number;
+  height: number;
+  depth: number;
+}
+
+export function normalizeModelResolution(
+  raw: Partial<ModelResolution> | null | undefined
+): ModelResolution | undefined {
+  if (!raw || typeof raw !== 'object') {
+    return undefined;
+  }
+  const width = Number(raw.width);
+  const height = Number(raw.height);
+  const depth = Number(raw.depth);
+  if (
+    !Number.isFinite(width) ||
+    !Number.isFinite(height) ||
+    !Number.isFinite(depth) ||
+    width <= 0 ||
+    height <= 0 ||
+    depth <= 0
+  ) {
+    return undefined;
+  }
+  return {
+    width: Math.round(width * 1000) / 1000,
+    height: Math.round(height * 1000) / 1000,
+    depth: Math.round(depth * 1000) / 1000,
+  };
+}
+
 export const DEFAULT_SOURCE_ANIMATION_FPS = 120;
 export const MIN_SOURCE_ANIMATION_FPS = 24;
 export const MAX_SOURCE_ANIMATION_FPS = 240;
@@ -30,6 +63,8 @@ export interface PetModelSettings {
   sourceAnimationFps: number;
   /** 播放速度倍率（1 = 正常；<1 变慢，>1 变快） */
   playbackSpeed: number;
+  /** 模型绑定姿势包围盒尺寸（加载 GLB 后自动写入） */
+  modelResolution?: ModelResolution;
   clickAnimation: Pick<ClickAnimationSettings, 'pool' | 'activeSequenceId'>;
 }
 
@@ -60,6 +95,9 @@ export function normalizePetModelSettings(
     return base;
   }
 
+  const modelResolution =
+    normalizeModelResolution(raw.modelResolution) ?? base.modelResolution;
+
   return {
     version: PET_MODEL_SETTINGS_VERSION,
     modelScale: clampModelScale(raw.modelScale ?? base.modelScale),
@@ -70,6 +108,7 @@ export function normalizePetModelSettings(
       raw.sourceAnimationFps ?? base.sourceAnimationFps
     ),
     playbackSpeed: clampPlaybackSpeed(raw.playbackSpeed ?? base.playbackSpeed),
+    ...(modelResolution ? { modelResolution } : {}),
     clickAnimation: normalizeClickAnimationSettings(raw.clickAnimation),
   };
 }
@@ -77,7 +116,7 @@ export function normalizePetModelSettings(
 export function petModelSettingsForStorage(
   settings: PetModelSettings
 ): PetModelSettings {
-  return {
+  const stored: PetModelSettings = {
     version: PET_MODEL_SETTINGS_VERSION,
     modelScale: settings.modelScale,
     modelBrightness: settings.modelBrightness,
@@ -85,4 +124,9 @@ export function petModelSettingsForStorage(
     playbackSpeed: clampPlaybackSpeed(settings.playbackSpeed),
     clickAnimation: clickAnimationSettingsForStorage(settings.clickAnimation),
   };
+  const resolution = normalizeModelResolution(settings.modelResolution);
+  if (resolution) {
+    stored.modelResolution = resolution;
+  }
+  return stored;
 }

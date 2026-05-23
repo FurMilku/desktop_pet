@@ -148,7 +148,9 @@ describe('click-animation', () => {
 
       },
 
-      []
+      [],
+
+      ['a', 'b']
 
     );
 
@@ -156,6 +158,23 @@ describe('click-animation', () => {
 
     expect(steps[1]?.delayAfterMs).toBe(50);
 
+  });
+
+  it('resolveClickAnimationSteps falls back to pool when active sequence clips missing on model', () => {
+    const steps = resolveClickAnimationSteps(
+      {
+        pool: [{ clipName: 'Common_Alert', weight: 10 }],
+        activeSequenceId: 'world_dig',
+        sequenceSteps: [
+          { clipName: 'World_Dig_Start' },
+          { clipName: 'World_Dig_Loop' },
+          { clipName: 'World_Dig_End' },
+        ],
+      },
+      ['Common_Relax'],
+      ['Common_Alert', 'Common_Relax']
+    );
+    expect(steps).toEqual([{ clipName: 'Common_Alert' }]);
   });
 
 });

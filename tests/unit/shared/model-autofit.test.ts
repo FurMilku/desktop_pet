@@ -32,4 +32,20 @@ describe('model-autofit', () => {
     expect(large).toBeLessThan(1);
     expect(0.846 * small).toBeLessThan(1.62 * large);
   });
+
+  it('can upscale small models to a shared target for desktop pet switching', () => {
+    const small = computeAutoFitScaleMultiplier(
+      { x: 0.8, y: 0.846, z: 0.7 },
+      1.25,
+      { allowUpscale: true }
+    );
+    const large = computeAutoFitScaleMultiplier(
+      { x: 1.5, y: 1.62, z: 1.4 },
+      1.25,
+      { allowUpscale: true }
+    );
+    expect(small).toBeCloseTo(1.25 / 0.846, 5);
+    expect(large).toBeCloseTo(1.25 / 1.62, 5);
+    expect(0.846 * small).toBeCloseTo(1.62 * large, 5);
+  });
 });

@@ -11,69 +11,89 @@
   <div class="settings-app">
     <header class="settings-header">
       <h1>&#23456;&#29289;&#35774;&#32622;</h1>
-      <p class="settings-subtitle">&#27169;&#22411;&#22823;&#23567;&#12289;&#31383;&#21475;&#20301;&#32622;&#19982;&#28857;&#20987;&#20114;&#21160;&#21160;&#30011;</p>
+      <p class="settings-subtitle">&#27169;&#22411;&#22823;&#23567;&#12289;&#31383;&#21475;&#20301;&#32622;&#12289;&#28857;&#20987;&#20114;&#21160;&#19982;&#35843;&#35797;&#36873;&#39033;</p>
     </header>
-    <main class="settings-main">
-      <section class="settings-section">
-        <h2>&#27169;&#22411;&#19982;&#31383;&#21475;&#22823;&#23567;</h2>
-        <label class="field">
-          <span>3D &#27169;&#22411; (.glb)</span>
-          <select id="model-file"></select>
-        </label>
-        <p class="hint hint--inline">&#27599;&#20010;&#27169;&#22411;&#22312;&#21516;&#30446;&#24405;&#29983;&#25104; <code>*.pet-settings.json</code>&#65307;&#20445;&#23384;&#21518;&#37325;&#36733;&#27169;&#22411;&#12290;</p>
-        <div class="field-grid">
-          <label class="field"><span>&#31383;&#21475;&#23485;&#24230; (px)</span><input type="number" id="window-width" min="400" max="1200" step="10" /></label>
-          <label class="field"><span>&#31383;&#21475;&#39640;&#24230; (px)</span><input type="number" id="window-height" min="500" max="1400" step="10" /></label>
-        </div>
-        <p class="live-readout" id="live-size" aria-live="polite">&#24403;&#21069;&#23454;&#38469;&#65306;&#8212;</p>
-        <label class="field field--slider"><span>&#27169;&#22411;&#32553;&#25918; <strong id="model-scale-value">1.00</strong>x</span><input type="range" id="model-scale" min="0.15" max="3" step="0.05" /></label>
-        <p class="live-readout" id="live-scale" aria-live="polite">&#24403;&#21069;&#23454;&#38469;&#65306;&#8212;</p>
-        <label class="field"><span>&#21160;&#30011;&#28304;&#24103;&#29575; (fps)</span><input type="number" id="source-animation-fps" min="24" max="240" step="1" /></label>
-        <p class="hint hint--inline">&#25163;&#28216;/UE &#23548;&#20986;&#24120;&#29992; 30&#12289;60 &#25110; 120&#65307;&#29992;&#20110;&#24103;&#21495;&#36712;&#36947;&#26102;&#38388;&#25442;&#31639;&#12290;</p>
-        <label class="field field--slider"><span>&#25773;&#25918;&#36895;&#24230; <strong id="playback-speed-value">1.00</strong>x</span><input type="range" id="playback-speed" min="0.25" max="4" step="0.05" /></label>
-        <p class="hint hint--inline">1 = &#25353;&#21160;&#30011;&#26102;&#38271;&#25773;&#25918;&#65307;&#20173;&#35273;&#24555;&#21487;&#35843;&#20302;&#65288;&#22914; 0.5&#65289;&#12290;</p>
-        <label class="field field--slider"><span>&#27169;&#22411;&#20142;&#24230; <strong id="model-brightness-value">1.00</strong>x</span><input type="range" id="model-brightness" min="0.25" max="2" step="0.05" /></label>
-        <p class="live-readout" id="live-brightness" aria-live="polite">&#24403;&#21069;&#23454;&#38469;&#65306;&#8212;</p>
-      </section>
-      <section class="settings-section">
-        <h2>&#31383;&#21475;&#20301;&#32622;</h2>
-        <div class="field-grid">
-          <label class="field"><span>X</span><input type="number" id="pos-x" step="1" /></label>
-          <label class="field"><span>Y</span><input type="number" id="pos-y" step="1" /></label>
-          <label class="field"><span>&#26174;&#31034;&#22120;</span><select id="pos-monitor"></select></label>
-        </div>
-        <p class="live-readout" id="live-position" aria-live="polite">&#24403;&#21069;&#23454;&#38469;&#65306;&#8212;</p>
-        <button type="button" class="btn btn--secondary" id="btn-use-current-pos">&#20351;&#29992;&#24403;&#21069;&#31383;&#21475;&#20301;&#32622;</button>
-      </section>
-      <section class="settings-section">
-        <h2>&#28857;&#20987;&#20114;&#21160;&#21160;&#30011;</h2>
-        <p class="hint">上方「动画剪辑」勾选与权重仅用于<strong>随机</strong>点击；序列编辑与合并见下方，可选模型内任意动画（含 Start / Loop / End）。</p>
-        <h3 class="subsection-title">随机池（勾选参与权重随机）</h3>
-        <div class="anim-list" id="pool-list"></div>
-        <h3 class="subsection-title">&#28857;&#20987;&#24207;&#21015;</h3>
-        <div class="anim-list" id="sequence-pool-list"></div>
-        <div id="start-loop-end-panel" class="start-loop-end-panel" hidden>
-          <p class="hint">以下为完整剪辑名（保留 Start / Loop / End 后缀），可一键合并为逐步序列。</p>
-          <div id="start-loop-end-list" class="start-loop-end-list"></div>
-        </div>
-        <div class="sequence-toolbar">
-          <button type="button" class="btn btn--secondary" id="btn-new-sequence">&#26032;&#24314;&#24207;&#21015;</button>
-          <button type="button" class="btn btn--secondary" id="btn-save-sequence">&#20445;&#23384;&#24207;&#21015;</button>
-          <button type="button" class="btn btn--secondary" id="btn-delete-sequence">&#21024;&#38500;&#24207;&#21015;</button>
-        </div>
-        <label class="field field--inline">
-          <span>&#25773;&#25918;&#26041;&#24335;</span>
-          <select id="active-sequence-select"></select>
-        </label>
-        <p class="hint hint--inline">选「随机（按权重）」时，上方随机池与下方序列勾选<strong>一起</strong>参与随机；选某一序列则固定播放该序列。</p>
-        <div id="sequence-editor" class="sequence-editor" hidden>
-          <label class="field"><span>&#24207;&#21015;&#21517;&#31216;</span><input type="text" id="sequence-name" /></label>
-          <p class="hint">从模型全部动画中选择并逐步排列（无需先在随机池勾选）；每步可设播完后等待（ms）。</p>
-          <div class="sequence-list" id="sequence-list"></div>
-          <button type="button" class="btn btn--secondary" id="btn-add-sequence-step">&#28155;&#21152;&#19968;&#27493;</button>
-        </div>
-      </section>
-    </main>
+    <div class="settings-body">
+      <aside class="settings-sidebar">
+        <nav class="settings-nav" id="settings-nav" aria-label="&#35774;&#32622;&#20998;&#31867;"></nav>
+      </aside>
+      <div class="settings-panel-area">
+        <main class="settings-main">
+          <section class="settings-section" id="section-model" data-category="model">
+            <h2>&#27169;&#22411;&#19982;&#31383;&#21475;&#22823;&#23567;</h2>
+            <label class="field">
+              <span>3D &#27169;&#22411; (.glb)</span>
+              <select id="model-file"></select>
+            </label>
+            <p class="hint hint--inline">&#27599;&#20010;&#27169;&#22411;&#22312;&#21516;&#30446;&#24405;&#29983;&#25104; <code>*.pet-settings.json</code>&#65307;&#20445;&#23384;&#21518;&#37325;&#36733;&#27169;&#22411;&#12290;</p>
+            <p class="live-readout" id="model-resolution-readout" aria-live="polite">&#27169;&#22411;&#20998;&#36776;&#29575;&#65306;&#8212;</p>
+            <div class="field-grid">
+              <label class="field"><span>&#31383;&#21475;&#23485;&#24230; (px)</span><input type="number" id="window-width" min="400" max="1200" step="10" /></label>
+              <label class="field"><span>&#31383;&#21475;&#39640;&#24230; (px)</span><input type="number" id="window-height" min="500" max="1400" step="10" /></label>
+            </div>
+            <p class="live-readout" id="live-size" aria-live="polite">&#24403;&#21069;&#23454;&#38469;&#65306;&#8212;</p>
+            <label class="field field--slider"><span>&#27169;&#22411;&#32553;&#25918; <strong id="model-scale-value">0.30</strong>x</span><input type="range" id="model-scale" min="0.15" max="3" step="0.05" /></label>
+            <p class="live-readout" id="live-scale" aria-live="polite">&#24403;&#21069;&#23454;&#38469;&#65306;&#8212;</p>
+            <label class="field"><span>&#21160;&#30011;&#28304;&#24103;&#29575; (fps)</span><input type="number" id="source-animation-fps" min="24" max="240" step="1" /></label>
+            <p class="hint hint--inline">&#25163;&#28216;/UE &#23548;&#20986;&#24120;&#29992; 30&#12289;60 &#25110; 120&#65307;&#29992;&#20110;&#24103;&#21495;&#36712;&#36947;&#26102;&#38388;&#25442;&#31639;&#12290;</p>
+            <label class="field field--slider"><span>&#25773;&#25918;&#36895;&#24230; <strong id="playback-speed-value">1.00</strong>x</span><input type="range" id="playback-speed" min="0.25" max="4" step="0.05" /></label>
+            <p class="hint hint--inline">1 = &#25353;&#21160;&#30011;&#26102;&#38271;&#25773;&#25918;&#65307;&#20173;&#35273;&#24555;&#21487;&#35843;&#20302;&#65288;&#22914; 0.5&#65289;&#12290;</p>
+            <label class="field field--slider"><span>&#27169;&#22411;&#20142;&#24230; <strong id="model-brightness-value">1.00</strong>x</span><input type="range" id="model-brightness" min="0.25" max="2" step="0.05" /></label>
+            <p class="live-readout" id="live-brightness" aria-live="polite">&#24403;&#21069;&#23454;&#38469;&#65306;&#8212;</p>
+          </section>
+          <section class="settings-section" id="section-position" data-category="position" hidden>
+            <h2>&#31383;&#21475;&#20301;&#32622;</h2>
+            <div class="field-grid">
+              <label class="field"><span>X</span><input type="number" id="pos-x" step="1" /></label>
+              <label class="field"><span>Y</span><input type="number" id="pos-y" step="1" /></label>
+              <label class="field"><span>&#26174;&#31034;&#22120;</span><select id="pos-monitor"></select></label>
+            </div>
+            <p class="live-readout" id="live-position" aria-live="polite">&#24403;&#21069;&#23454;&#38469;&#65306;&#8212;</p>
+            <button type="button" class="btn btn--secondary" id="btn-use-current-pos">&#20351;&#29992;&#24403;&#21069;&#31383;&#21475;&#20301;&#32622;</button>
+          </section>
+          <section class="settings-section" id="section-click" data-category="click" hidden>
+            <h2>&#28857;&#20987;&#20114;&#21160;&#21160;&#30011;</h2>
+            <p class="hint">&#19978;&#26041;&#12300;&#21160;&#30011;&#21098;&#36753;&#12301;&#21246;&#36873;&#19982;&#26435;&#37325;&#20165;&#29992;&#20110;<strong>&#38543;&#26426;</strong>&#28857;&#20987;&#65307;&#24207;&#21015;&#32534;&#36753;&#19982;&#21512;&#24182;&#35265;&#19979;&#26041;&#65292;&#21487;&#36873;&#27169;&#22411;&#20869;&#20219;&#24847;&#21160;&#30011;&#65288;&#21547; Start / Loop / End&#65289;&#12290;</p>
+            <h3 class="subsection-title">&#38543;&#26426;&#27744;&#65288;&#21246;&#36873;&#21442;&#19982;&#26435;&#37325;&#38543;&#26426;&#65289;</h3>
+            <div class="anim-list" id="pool-list"></div>
+            <h3 class="subsection-title">&#28857;&#20987;&#24207;&#21015;</h3>
+            <div class="anim-list" id="sequence-pool-list"></div>
+            <div id="start-loop-end-panel" class="start-loop-end-panel" hidden>
+              <p class="hint">&#20197;&#19979;&#20026;&#23436;&#25972;&#21098;&#36753;&#21517;&#65288;&#20445;&#30041; Start / Loop / End &#21518;&#32512;&#65289;&#65292;&#21487;&#19968;&#38190;&#21512;&#24182;&#20026;&#36880;&#27493;&#24207;&#21015;&#12290;</p>
+              <div id="start-loop-end-list" class="start-loop-end-list"></div>
+            </div>
+            <div class="sequence-toolbar">
+              <button type="button" class="btn btn--secondary" id="btn-new-sequence">&#26032;&#24314;&#24207;&#21015;</button>
+              <button type="button" class="btn btn--secondary" id="btn-save-sequence">&#20445;&#23384;&#24207;&#21015;</button>
+              <button type="button" class="btn btn--secondary" id="btn-delete-sequence">&#21024;&#38500;&#24207;&#21015;</button>
+            </div>
+            <label class="field field--inline">
+              <span>&#25773;&#25918;&#26041;&#24335;</span>
+              <select id="active-sequence-select"></select>
+            </label>
+            <p class="hint hint--inline">&#36873;&#12300;&#38543;&#26426;&#65288;&#25353;&#26435;&#37325;&#65289;&#12301;&#26102;&#65292;&#19978;&#26041;&#38543;&#26426;&#27744;&#19982;&#19979;&#26041;&#24207;&#21015;&#21246;&#36873;<strong>&#19968;&#36215;</strong>&#21442;&#19982;&#38543;&#26426;&#65307;&#36873;&#26576;&#19968;&#24207;&#21015;&#21017;&#22266;&#23450;&#25773;&#25918;&#35813;&#24207;&#21015;&#12290;</p>
+            <div id="sequence-editor" class="sequence-editor" hidden>
+              <label class="field"><span>&#24207;&#21015;&#21517;&#31216;</span><input type="text" id="sequence-name" /></label>
+              <p class="hint">&#20174;&#27169;&#22411;&#20840;&#37096;&#21160;&#30011;&#20013;&#36873;&#25321;&#24182;&#36880;&#27493;&#25490;&#21015;&#65288;&#26080;&#38656;&#20808;&#22312;&#38543;&#26426;&#27744;&#21246;&#36873;&#65289;&#65307;&#27599;&#27493;&#21487;&#35774;&#25773;&#23436;&#21518;&#31561;&#24453;&#65288;ms&#65289;&#12290;</p>
+              <div class="sequence-list" id="sequence-list"></div>
+              <button type="button" class="btn btn--secondary" id="btn-add-sequence-step">&#28155;&#21152;&#19968;&#27493;</button>
+            </div>
+          </section>
+          <section class="settings-section" id="section-debug" data-category="debug" hidden>
+            <h2>&#35843;&#35797;</h2>
+            <label class="field field--checkbox">
+              <span>&#26174;&#31034; FPS &#30417;&#35270;&#22120;</span>
+              <input type="checkbox" id="fps-monitor-enabled" />
+            </label>
+            <p class="hint hint--inline">&#22312;&#23456;&#29289;&#31383;&#21475;&#35282;&#33853;&#26174;&#31034;&#23454;&#26102;&#24103;&#29575;&#19982;&#24403;&#21069;&#25773;&#25918;&#30340;&#21160;&#30011;&#21098;&#36753;&#21517;&#12290;</p>
+            <fieldset class="field fieldset" id="fps-monitor-position-fieldset">
+              <legend>&#30417;&#35270;&#22120;&#20301;&#32622;</legend>
+              <div class="radio-grid" id="fps-monitor-position"></div>
+            </fieldset>
+          </section>
+        </main>
+      </div>
+    </div>
     <footer class="settings-footer">
       <span id="status-text" class="status-text"></span>
       <div class="footer-actions">

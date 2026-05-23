@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "modelScale": 0.15,
+  "modelScale": 0.225,
   "modelBrightness": 1,
   "sourceAnimationFps": 120,
   "playbackSpeed": 1,
@@ -24,7 +24,7 @@
       },
       {
         "clipName": "Common_Relax",
-        "weight": 10
+        "weight": 5
       },
       {
         "clipName": "Common_Sad",

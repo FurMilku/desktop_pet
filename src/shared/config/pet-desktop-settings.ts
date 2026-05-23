@@ -4,7 +4,14 @@ import {
   clampSourceAnimationFps,
   DEFAULT_PLAYBACK_SPEED,
   DEFAULT_SOURCE_ANIMATION_FPS,
+  normalizeModelResolution,
+  type ModelResolution,
 } from './pet-model-settings';
+import {
+  DEFAULT_FPS_MONITOR_POSITION,
+  normalizeFpsMonitorPosition,
+  type FpsMonitorPosition,
+} from './fps-monitor';
 import {
   PET_WINDOW_HEIGHT,
   PET_WINDOW_MAX_HEIGHT,
@@ -48,6 +55,8 @@ export interface ClickAnimationSettings {
   sequenceStepsById?: Record<string, ClickAnimationSequenceStep[]>;
 }
 
+export type { FpsMonitorPosition };
+
 export interface PetDesktopConfig {
   windowWidth: number;
   windowHeight: number;
@@ -61,6 +70,12 @@ export interface PetDesktopConfig {
   sourceAnimationFps: number;
   /** 播放速度倍率（1 = 正常） */
   playbackSpeed: number;
+  /** 是否在宠物窗口显示 FPS 监视器 */
+  fpsMonitorEnabled: boolean;
+  /** FPS 监视器在窗口内的角落位置 */
+  fpsMonitorPosition: FpsMonitorPosition;
+  /** 模型绑定姿势包围盒（来自 *.pet-settings.json，只读） */
+  modelResolution?: ModelResolution;
   position: {
     x: number;
     y: number;
@@ -76,6 +91,8 @@ export interface PetGlobalDesktopConfig {
   windowWidth: number;
   windowHeight: number;
   modelFileName: string | null;
+  fpsMonitorEnabled: boolean;
+  fpsMonitorPosition: FpsMonitorPosition;
   position: {
     x: number;
     y: number;
@@ -90,6 +107,8 @@ export function extractGlobalDesktopConfig(
     windowWidth: config.windowWidth,
     windowHeight: config.windowHeight,
     modelFileName: config.modelFileName,
+    fpsMonitorEnabled: config.fpsMonitorEnabled,
+    fpsMonitorPosition: config.fpsMonitorPosition,
     position: { ...config.position },
   };
 }
@@ -101,17 +120,22 @@ export function mergeGlobalAndModelSettings(
     modelBrightness: number;
     sourceAnimationFps: number;
     playbackSpeed: number;
+    modelResolution?: ModelResolution;
     clickAnimation: ClickAnimationSettings;
   }
 ): PetDesktopConfig {
-  return normalizePetDesktopConfig({
+  const partial: Partial<PetDesktopConfig> = {
     ...global,
     modelScale: model.modelScale,
     modelBrightness: model.modelBrightness,
     sourceAnimationFps: model.sourceAnimationFps,
     playbackSpeed: model.playbackSpeed,
     clickAnimation: model.clickAnimation,
-  });
+  };
+  if (model.modelResolution) {
+    partial.modelResolution = model.modelResolution;
+  }
+  return normalizePetDesktopConfig(partial);
 }
 
 export const DEFAULT_CLICK_ANIMATION: ClickAnimationSettings = {
@@ -134,6 +158,8 @@ export function clampWindowHeight(height: number): number {
 /** 100% 显示缩放下可存的最小倍率；高 DPI 下有效最小值 = 本值 × Windows 缩放比例 */
 export const MIN_MODEL_SCALE = 0.15;
 export const MAX_MODEL_SCALE = 3;
+/** 100% 显示缩放下的默认 stored 倍率（手游 GLB autoFit 后的推荐基准） */
+export const DEFAULT_MODEL_SCALE = 0.3;
 
 export function clampModelScale(scale: number): number {
   return Math.min(MAX_MODEL_SCALE, Math.max(MIN_MODEL_SCALE, scale));
@@ -161,10 +187,12 @@ export function createDefaultPetDesktopConfig(
     windowWidth: PET_WINDOW_WIDTH,
     windowHeight: PET_WINDOW_HEIGHT,
     modelFileName: null,
-    modelScale: 1,
+    modelScale: DEFAULT_MODEL_SCALE,
     modelBrightness: 1,
     sourceAnimationFps: DEFAULT_SOURCE_ANIMATION_FPS,
     playbackSpeed: DEFAULT_PLAYBACK_SPEED,
+    fpsMonitorEnabled: false,
+    fpsMonitorPosition: DEFAULT_FPS_MONITOR_POSITION,
     position: { x: 0, y: 0, monitor: 0 },
     clickAnimation: { ...DEFAULT_CLICK_ANIMATION, pool: [] },
     ...overrides,
@@ -183,6 +211,8 @@ export function normalizePetDesktopConfig(
     return base;
   }
 
+  const modelResolution = normalizeModelResolution(raw.modelResolution);
+
   return {
     windowWidth: clampWindowWidth(raw.windowWidth ?? base.windowWidth),
     windowHeight: clampWindowHeight(raw.windowHeight ?? base.windowHeight),
@@ -195,12 +225,17 @@ export function normalizePetDesktopConfig(
       raw.sourceAnimationFps ?? base.sourceAnimationFps
     ),
     playbackSpeed: clampPlaybackSpeed(raw.playbackSpeed ?? base.playbackSpeed),
+    fpsMonitorEnabled: raw.fpsMonitorEnabled ?? base.fpsMonitorEnabled,
+    fpsMonitorPosition: normalizeFpsMonitorPosition(
+      raw.fpsMonitorPosition ?? base.fpsMonitorPosition
+    ),
     position: {
       x: Math.round(raw.position?.x ?? fallbackPosition?.x ?? 0),
       y: Math.round(raw.position?.y ?? fallbackPosition?.y ?? 0),
       monitor: raw.position?.monitor ?? fallbackPosition?.monitor ?? 0,
     },
     clickAnimation: normalizeClickAnimationSettings(raw.clickAnimation),
+    ...(modelResolution ? { modelResolution } : {}),
   };
 }
 

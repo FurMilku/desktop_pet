@@ -23,12 +23,13 @@ export function autoFitDimensionFromBounds(size: ModelBoundsSize): number {
 }
 
 /**
- * 在现有缩放上追加的 autoFit 倍率（≤ 1）。
- * 仅当 mesh 尺度大于 targetSize 时缩小；较小模型保持原始比例。
+ * 在现有缩放上追加的 autoFit 倍率。
+ * 默认仅缩小超过 targetSize 的模型；桌面宠物可开启 allowUpscale 统一视觉体型。
  */
 export function computeAutoFitScaleMultiplier(
   boundsSize: ModelBoundsSize,
-  targetSize: number
+  targetSize: number,
+  options?: { allowUpscale?: boolean }
 ): number {
   if (!Number.isFinite(targetSize) || targetSize <= 0) {
     return 1;
@@ -39,8 +40,11 @@ export function computeAutoFitScaleMultiplier(
     return 1;
   }
 
-  if (dimension <= targetSize) {
-    return 1;
+  if (!options?.allowUpscale) {
+    if (dimension <= targetSize) {
+      return 1;
+    }
+    return targetSize / dimension;
   }
 
   return targetSize / dimension;

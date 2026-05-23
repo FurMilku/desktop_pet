@@ -38,6 +38,108 @@ body {
   padding: 16px 24px 24px;
 }
 
+.settings-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.settings-sidebar {
+  width: 168px;
+  flex-shrink: 0;
+  border-right: 1px solid #333;
+  padding: 12px 0;
+  background: #1a1a20;
+}
+
+.settings-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 8px;
+}
+
+.settings-nav-item {
+  display: block;
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #bbb;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.settings-nav-item:hover {
+  background: #2a2a32;
+  color: #eee;
+}
+
+.settings-nav-item.is-active {
+  background: #2f3a52;
+  color: #93c5fd;
+  font-weight: 600;
+}
+
+.settings-panel-area {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.field--checkbox {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.field--checkbox input[type='checkbox'] {
+  width: 18px;
+  height: 18px;
+}
+
+.fieldset {
+  border: 1px solid #3a3a48;
+  border-radius: 8px;
+  padding: 12px 14px 14px;
+  margin: 0 0 12px;
+}
+
+.fieldset legend {
+  padding: 0 6px;
+  color: #bbb;
+  font-size: 12px;
+}
+
+.radio-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.radio-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: #2a2a32;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  color: #ddd;
+}
+
+.radio-option input[type='radio'] {
+  margin: 0;
+}
+
+.settings-section[hidden] {
+  display: none !important;
+}
+
 .settings-section {
   margin-bottom: 28px;
 }

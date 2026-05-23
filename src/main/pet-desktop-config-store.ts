@@ -24,13 +24,10 @@ import {
 } from './click-sequence-store';
 
 import {
-
   loadPetModelSettings,
-
   migrateLegacyModelFieldsToJson,
-
   savePetModelSettings,
-
+  updatePetModelResolution,
 } from './pet-model-settings-store';
 
 import { getWindowManager } from './window-manager';
@@ -222,6 +219,10 @@ function loadGlobalDesktopConfig(): PetGlobalDesktopConfig {
         windowHeight: parsed.windowHeight,
 
         modelFileName: parsed.modelFileName,
+
+        fpsMonitorEnabled: parsed.fpsMonitorEnabled,
+
+        fpsMonitorPosition: parsed.fpsMonitorPosition,
 
         position: parsed.position,
 
@@ -464,6 +465,14 @@ export function clearPetDesktopConfigCache(): void {
 
   cachedConfig = null;
 
+}
+
+export function persistModelResolutionForFile(
+  modelFileName: string | null | undefined,
+  resolution: { width: number; height: number; depth: number }
+): void {
+  updatePetModelResolution(modelFileName, resolution);
+  cachedConfig = null;
 }
 
 
