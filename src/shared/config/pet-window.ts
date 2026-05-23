@@ -46,15 +46,18 @@ export interface PetHitRegion {
   maxY: number;
 }
 
-/** 主进程光标命中检测 padding（像素，仅用于窗口移动等 fallback） */
-export const PET_HIT_REGION_PADDING = 4;
-
-/** 渲染进程指针状态与主进程光标位置的最大允许偏差（像素） */
+/** 渲染进程指针状态与主进程光标位置的最大允许偏差（像素，100% 显示缩放下） */
 export const PET_POINTER_SYNC_TOLERANCE = 4;
+
+/** 按显示器缩放换算指针同步容差 */
+export function scaledPointerSyncTolerance(scaleFactor: number): number {
+  const safe = Number.isFinite(scaleFactor) && scaleFactor > 0 ? scaleFactor : 1;
+  return PET_POINTER_SYNC_TOLERANCE * safe;
+}
 
 /** 主进程收到的宠物命中状态（每帧由渲染进程推送） */
 export interface PetHitState {
-  /** 模型投影包围盒（窗口内局部像素），仅作 fallback */
+  /** 模型投影包围盒（窗口内局部像素），供调试/窗口自适应参考 */
   region: PetHitRegion | null;
   /** 渲染进程在 pointerLocal 处的命中结果 */
   pointerOnPet: boolean;

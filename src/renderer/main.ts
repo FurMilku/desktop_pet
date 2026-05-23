@@ -84,6 +84,7 @@ interface WindowAPI {
   minimize(): Promise<void>;
   getDisplays(): Promise<DisplayInfo[]>;
   getDisplayScale(): Promise<number>;
+  getCursorInContentSync(): { localX: number; localY: number; inWindow: boolean };
   setClickThrough(enable: boolean, options?: { forward?: boolean }): Promise<void>;
   updatePetHitRegion(state: PetHitState): void;
   setClickThroughInteractionLock(locked: boolean): void;
@@ -1727,13 +1728,33 @@ function checkMouseOnPet(clientX: number, clientY: number): boolean {
 }
 
 /**
- * 光标捕获命中（穿透切换用，占位宠物仅射线）
+ * 光标捕获命中（穿透切换用，严格射线贴合模型）
  */
 function checkPointerCaptureOnPet(clientX: number, clientY: number): boolean {
-  if (!usePlaceholderPet && petRenderer?.isInitialized()) {
-    return petRenderer.hitTestPointerCapture(clientX, clientY);
-  }
   return checkMouseOnPet(clientX, clientY);
+}
+
+/**
+ * 使用主进程 OS 光标坐标（窗口内容区局部像素）做命中检测
+ */
+function checkPointerCaptureAtContentLocal(localX: number, localY: number): boolean {
+  const rect = petContainer.getBoundingClientRect();
+  return checkPointerCaptureOnPet(rect.left + localX, rect.top + localY);
+}
+
+/**
+ * 读取与主进程一致的光标位置，供穿透切换每帧推送
+ */
+function readCursorInContentFromMain(): {
+  localX: number;
+  localY: number;
+  inWindow: boolean;
+} | null {
+  try {
+    return getElectronAPI()?.window?.getCursorInContentSync?.() ?? null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -1820,16 +1841,21 @@ function pushPetHitRegionToMain(): void {
     ? getPlaceholderHitRegion()
     : petRenderer?.getHitRegionRect() ?? null;
 
-  const pointerOnPet = hasPointerPosition
-    ? checkPointerCaptureOnPet(lastPointerClientX, lastPointerClientY)
+  const cursorInContent = readCursorInContentFromMain();
+  const pointerLocalX = cursorInContent?.inWindow ? cursorInContent.localX : lastPointerLocalX;
+  const pointerLocalY = cursorInContent?.inWindow ? cursorInContent.localY : lastPointerLocalY;
+  const hasPointer = cursorInContent?.inWindow ?? hasPointerPosition;
+
+  const pointerOnPet = hasPointer
+    ? checkPointerCaptureAtContentLocal(pointerLocalX, pointerLocalY)
     : false;
 
   const state: PetHitState = {
     region,
     pointerOnPet,
-    pointerLocalX: lastPointerLocalX,
-    pointerLocalY: lastPointerLocalY,
-    hasPointer: hasPointerPosition,
+    pointerLocalX,
+    pointerLocalY,
+    hasPointer,
   };
 
   api.window.updatePetHitRegion(state);
@@ -2398,6 +2424,9 @@ function initMouseEvents(): void {
 
   document.addEventListener('mousemove', (event: MouseEvent) => {
     trackPointerPosition(event.clientX, event.clientY);
+    if (!showWindowFrameEnabled && !contextMenuOpen) {
+      pushPetHitRegionToMain();
+    }
   });
 
   console.log('[Renderer] Mouse events initialized');

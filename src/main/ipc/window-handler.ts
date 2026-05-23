@@ -38,6 +38,7 @@ export const WindowChannels = {
   SET_RESIZE_FRAME: 'window:set-resize-frame',
   GET_RESIZE_FRAME: 'window:get-resize-frame',
   GET_DISPLAY_SCALE: 'window:get-display-scale',
+  GET_CURSOR_IN_CONTENT: 'window:get-cursor-in-content',
   UPDATE_PET_HIT_REGION: 'window:update-pet-hit-region',
   SET_CLICK_THROUGH_LOCK: 'window:set-click-through-lock',
 } as const;
@@ -132,6 +133,7 @@ export function registerWindowHandlers(): void {
 
   ipcMain.handle(WindowChannels.GET_DISPLAY_SCALE, handleGetDisplayScale);
 
+  ipcMain.on(WindowChannels.GET_CURSOR_IN_CONTENT, handleGetCursorInContent);
   ipcMain.on(WindowChannels.UPDATE_PET_HIT_REGION, handleUpdatePetHitRegion);
   ipcMain.on(WindowChannels.SET_CLICK_THROUGH_LOCK, handleSetClickThroughLock);
 
@@ -161,6 +163,7 @@ export function unregisterWindowHandlers(): void {
   ipcMain.removeHandler(WindowChannels.GET_RESIZE_FRAME);
   ipcMain.removeHandler(WindowChannels.GET_DISPLAY_SCALE);
 
+  ipcMain.removeAllListeners(WindowChannels.GET_CURSOR_IN_CONTENT);
   ipcMain.removeAllListeners(WindowChannels.UPDATE_PET_HIT_REGION);
   ipcMain.removeAllListeners(WindowChannels.SET_CLICK_THROUGH_LOCK);
 
@@ -477,6 +480,33 @@ async function handleGetResizeFrame(_event: IpcMainInvokeEvent): Promise<boolean
   } catch (error) {
     logger.error('Failed to get resize frame state', error);
     throw createIPCError('ERR_INTERNAL', `Failed to get resize frame state: ${error}`);
+  }
+}
+
+function handleGetCursorInContent(event: IpcMainEvent): void {
+  try {
+    const senderWindow = BrowserWindow.fromWebContents(event.sender);
+    if (senderWindow && !senderWindow.isDestroyed()) {
+      const cursor = screen.getCursorScreenPoint();
+      const bounds = senderWindow.getContentBounds();
+      const localX = cursor.x - bounds.x;
+      const localY = cursor.y - bounds.y;
+      event.returnValue = {
+        localX,
+        localY,
+        inWindow:
+          localX >= 0 &&
+          localY >= 0 &&
+          localX < bounds.width &&
+          localY < bounds.height,
+      };
+      return;
+    }
+
+    event.returnValue = getWindowManager().getCursorInContent();
+  } catch (error) {
+    logger.error('Failed to get cursor in content', error);
+    event.returnValue = { localX: 0, localY: 0, inWindow: false };
   }
 }
 

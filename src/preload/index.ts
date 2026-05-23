@@ -360,6 +360,18 @@ const windowAPI = {
     return ipcRenderer.invoke('window:get-display-scale');
   },
 
+  getCursorInContentSync: (): {
+    localX: number;
+    localY: number;
+    inWindow: boolean;
+  } => {
+    return ipcRenderer.sendSync('window:get-cursor-in-content') as {
+      localX: number;
+      localY: number;
+      inWindow: boolean;
+    };
+  },
+
   /**
    * 设置点击穿透
    * @param enable 是否启用点击穿透

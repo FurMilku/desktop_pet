@@ -241,7 +241,7 @@ export interface IPetRenderer {
   getFPS(): number;
   /** 检测屏幕坐标是否命中宠物模型（严格射线，用于点击/拖拽） */
   hitTest(clientX: number, clientY: number): boolean;
-  /** 光标捕获用命中（射线 + 极小 padding，供主进程穿透切换） */
+  /** 光标捕获用命中（严格射线，供主进程穿透切换） */
   hitTestPointerCapture(clientX: number, clientY: number): boolean;
   /** 模型在容器内的投影包围盒（窗口局部像素，供主进程光标命中） */
   getHitRegionRect(): { minX: number; maxX: number; minY: number; maxY: number } | null;
@@ -482,8 +482,6 @@ export class PetRenderer implements IPetRenderer {
   private lastViewportRequestHeight = 0;
   private static readonly FLY_VIEWPORT_RESIZE_INTERVAL_MS = 200;
   private static readonly IDLE_VIEWPORT_RESIZE_INTERVAL_MS = 400;
-  /** 屏幕投影包围盒命中 padding（像素），仅用于 pointer capture 极小兜底 */
-  private static readonly HIT_TEST_SCREEN_PADDING = 4;
   /** autoFit / 相机取景：剔除相对中位尺寸过大的辅助网格 */
   private static readonly AUTOFIT_BBOX_OUTLIER_RATIO = 8;
   /** 点击穿透 / 命中区域：更紧的包围盒，避免空白区误触 */
@@ -1974,31 +1972,6 @@ export class PetRenderer implements IPetRenderer {
   }
 
   /**
-   * 屏幕坐标是否落在模型投影包围盒内（含 padding）
-   */
-  private isPointInProjectedScreenRect(
-    clientX: number,
-    clientY: number,
-    padding = PetRenderer.HIT_TEST_SCREEN_PADDING
-  ): boolean {
-    const screenRect = this.getProjectedScreenRect();
-    if (!screenRect) {
-      return false;
-    }
-
-    const bounds = this.config.container.getBoundingClientRect();
-    const localX = clientX - bounds.left;
-    const localY = clientY - bounds.top;
-
-    return (
-      localX >= screenRect.minX - padding &&
-      localX <= screenRect.maxX + padding &&
-      localY >= screenRect.minY - padding &&
-      localY <= screenRect.maxY + padding
-    );
-  }
-
-  /**
    * 根据投影包围盒计算建议窗口尺寸（重点保证宽度容纳展翼）
    */
   private computeDesiredViewportSize(): { width: number; height: number } | null {
@@ -2430,13 +2403,10 @@ export class PetRenderer implements IPetRenderer {
   }
 
   /**
-   * 光标捕获命中：射线优先，动画间隙用极小 padding 包围盒兜底
+   * 光标捕获命中：严格射线，非穿透区域完全贴合模型网格
    */
   hitTestPointerCapture(clientX: number, clientY: number): boolean {
-    if (this.raycastHit(clientX, clientY)) {
-      return true;
-    }
-    return this.isPointInProjectedScreenRect(clientX, clientY, PetRenderer.HIT_TEST_SCREEN_PADDING);
+    return this.raycastHit(clientX, clientY);
   }
 
   private raycastHit(clientX: number, clientY: number): boolean {

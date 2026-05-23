@@ -14,11 +14,17 @@ import {
   PET_WINDOW_MIN_HEIGHT,
   PET_WINDOW_MAX_WIDTH,
   PET_WINDOW_MAX_HEIGHT,
-  PET_HIT_REGION_PADDING,
-  PET_POINTER_SYNC_TOLERANCE,
+  scaledPointerSyncTolerance,
   type PetHitRegion,
   type PetHitState,
 } from '../shared/config/pet-window';
+
+/** 主进程读取的 OS 光标在窗口内容区内的位置 */
+export interface CursorInContent {
+  localX: number;
+  localY: number;
+  inWindow: boolean;
+}
 import { getLogger } from './logger';
 
 const logger = getLogger('window-manager');
@@ -119,6 +125,7 @@ export interface IWindowManager {
   setAlwaysOnTop(alwaysOnTop: boolean): void;
   setOpacity(opacity: number): void;
   setClickThrough(enable: boolean, options?: { forward?: boolean }): void;
+  getCursorInContent(): CursorInContent;
   setPetHitRegion(region: PetHitRegion | null): void;
   setPetHitState(state: PetHitState): void;
   setClickThroughInteractionLock(locked: boolean): void;
@@ -567,10 +574,35 @@ export class WindowManager implements IWindowManager {
       this.window.setIgnoreMouseEvents(true, { forward: options?.forward ?? true });
     } else {
       this.window.setIgnoreMouseEvents(false);
+      if (this.currentState.isAlwaysOnTop) {
+        this.window.setAlwaysOnTop(true, 'floating');
+        this.window.moveTop();
+      }
     }
 
     this.appliedClickThrough = enable;
     logger.debug('Click through set to', enable, options);
+  }
+
+  /**
+   * 读取 OS 光标在窗口内容区内的局部坐标（与渲染进程 client 坐标对齐）
+   */
+  getCursorInContent(): CursorInContent {
+    if (!this.window || this.window.isDestroyed()) {
+      return { localX: 0, localY: 0, inWindow: false };
+    }
+
+    const cursor = screen.getCursorScreenPoint();
+    const bounds = this.window.getContentBounds();
+    const localX = cursor.x - bounds.x;
+    const localY = cursor.y - bounds.y;
+    const inWindow =
+      localX >= 0 &&
+      localY >= 0 &&
+      localX < bounds.width &&
+      localY < bounds.height;
+
+    return { localX, localY, inWindow };
   }
 
   /**
@@ -626,47 +658,26 @@ export class WindowManager implements IWindowManager {
       return;
     }
 
-    const cursor = screen.getCursorScreenPoint();
-    const bounds = this.window.getBounds();
-    const localX = cursor.x - bounds.x;
-    const localY = cursor.y - bounds.y;
-
-    const inWindow =
-      localX >= 0 &&
-      localY >= 0 &&
-      localX < bounds.width &&
-      localY < bounds.height;
+    const { localX, localY, inWindow } = this.getCursorInContent();
 
     if (!inWindow) {
       this.setClickThrough(true, { forward: true });
       return;
     }
 
-    const region = this.petHitState.region ?? this.petHitRegion;
     const state = this.petHitState;
+    const syncTolerance = scaledPointerSyncTolerance(this.getCurrentDisplay().scaleFactor);
     const pointerSynced =
       state.hasPointer &&
-      Math.hypot(localX - state.pointerLocalX, localY - state.pointerLocalY) <=
-        PET_POINTER_SYNC_TOLERANCE;
+      Math.hypot(localX - state.pointerLocalX, localY - state.pointerLocalY) <= syncTolerance;
 
-    if (pointerSynced) {
+    if (pointerSynced && state.hasPointer) {
       this.setClickThrough(!state.pointerOnPet, { forward: true });
       return;
     }
 
-    if (!region) {
-      this.setClickThrough(true, { forward: true });
-      return;
-    }
-
-    const padding = PET_HIT_REGION_PADDING;
-    const onPet =
-      localX >= region.minX - padding &&
-      localX <= region.maxX + padding &&
-      localY >= region.minY - padding &&
-      localY <= region.maxY + padding;
-
-    this.setClickThrough(!onPet, { forward: true });
+    // 无射线命中结果时不使用投影包围盒兜底，避免空白区误触
+    this.setClickThrough(true, { forward: true });
   }
 
   /**
