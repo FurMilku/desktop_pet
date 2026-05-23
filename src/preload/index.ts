@@ -19,6 +19,7 @@ interface DisplayInfo {
   id: number;
   bounds: { x: number; y: number; width: number; height: number };
   isPrimary: boolean;
+  scaleFactor: number;
 }
 
 // Pet API Types
@@ -355,6 +356,10 @@ const windowAPI = {
     return ipcRenderer.invoke('window:get-displays');
   },
 
+  getDisplayScale: (): Promise<number> => {
+    return ipcRenderer.invoke('window:get-display-scale');
+  },
+
   /**
    * 设置点击穿透
    * @param enable 是否启用点击穿透
@@ -362,6 +367,25 @@ const windowAPI = {
    */
   setClickThrough: (enable: boolean, options?: { forward?: boolean }): Promise<void> => {
     return ipcRenderer.invoke('window:set-click-through', enable, options);
+  },
+
+  updatePetHitRegion: (state: {
+    region: {
+      minX: number;
+      maxX: number;
+      minY: number;
+      maxY: number;
+    } | null;
+    pointerOnPet: boolean;
+    pointerLocalX: number;
+    pointerLocalY: number;
+    hasPointer: boolean;
+  }): void => {
+    ipcRenderer.send('window:update-pet-hit-region', state);
+  },
+
+  setClickThroughInteractionLock: (locked: boolean): void => {
+    ipcRenderer.send('window:set-click-through-lock', locked);
   },
 
   setResizeFrameEnabled: (enabled: boolean): Promise<void> => {
@@ -389,8 +413,8 @@ const windowAPI = {
 // ============================================================================
 
 const petAPI = {
-  getModelUrl: (): Promise<string | null> => {
-    return ipcRenderer.invoke('pet:get-model-url');
+  getModelUrl: (modelFileName?: string | null): Promise<string | null> => {
+    return ipcRenderer.invoke('pet:get-model-url', modelFileName);
   },
 
   getState: (): Promise<PetState> => {

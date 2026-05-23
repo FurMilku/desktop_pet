@@ -14,6 +14,10 @@ import {
   PET_WINDOW_MIN_HEIGHT,
   PET_WINDOW_MAX_WIDTH,
   PET_WINDOW_MAX_HEIGHT,
+  PET_HIT_REGION_PADDING,
+  PET_POINTER_SYNC_TOLERANCE,
+  type PetHitRegion,
+  type PetHitState,
 } from '../shared/config/pet-window';
 import { getLogger } from './logger';
 
@@ -115,6 +119,11 @@ export interface IWindowManager {
   setAlwaysOnTop(alwaysOnTop: boolean): void;
   setOpacity(opacity: number): void;
   setClickThrough(enable: boolean, options?: { forward?: boolean }): void;
+  setPetHitRegion(region: PetHitRegion | null): void;
+  setPetHitState(state: PetHitState): void;
+  setClickThroughInteractionLock(locked: boolean): void;
+  startClickThroughMonitor(): void;
+  stopClickThroughMonitor(): void;
   setResizeFrameEnabled(enabled: boolean): void;
   isResizeFrameEnabled(): boolean;
   show(): void;
@@ -184,6 +193,17 @@ export class WindowManager implements IWindowManager {
   private currentState: WindowState;
   private displayChangeHandler: (() => void) | null = null;
   private layoutSaveTimer: ReturnType<typeof setTimeout> | null = null;
+  private petHitRegion: PetHitRegion | null = null;
+  private petHitState: PetHitState = {
+    region: null,
+    pointerOnPet: false,
+    pointerLocalX: 0,
+    pointerLocalY: 0,
+    hasPointer: false,
+  };
+  private clickThroughInteractionLocked = false;
+  private clickThroughMonitorHandle: ReturnType<typeof setInterval> | null = null;
+  private appliedClickThrough: boolean | null = null;
 
   constructor() {
     // 初始化默认状态
@@ -239,6 +259,8 @@ export class WindowManager implements IWindowManager {
       clearTimeout(this.layoutSaveTimer);
       this.layoutSaveTimer = null;
     }
+
+    this.stopClickThroughMonitor();
 
     // 移除显示器变化监听
     if (this.displayChangeHandler) {
@@ -367,6 +389,8 @@ export class WindowManager implements IWindowManager {
       position: initialPosition,
       size: { width: initialWidth, height: initialHeight },
     });
+
+    this.startClickThroughMonitor();
   }
 
   // --------------------------------------------------------------------------
@@ -535,13 +559,114 @@ export class WindowManager implements IWindowManager {
       return;
     }
 
+    if (this.appliedClickThrough === enable) {
+      return;
+    }
+
     if (enable) {
       this.window.setIgnoreMouseEvents(true, { forward: options?.forward ?? true });
     } else {
       this.window.setIgnoreMouseEvents(false);
     }
 
+    this.appliedClickThrough = enable;
     logger.debug('Click through set to', enable, options);
+  }
+
+  /**
+   * 更新宠物投影命中区域（窗口内局部像素坐标）
+   */
+  setPetHitRegion(region: PetHitRegion | null): void {
+    this.petHitRegion = region;
+    this.petHitState = { ...this.petHitState, region };
+    this.syncClickThroughFromCursor();
+  }
+
+  setPetHitState(state: PetHitState): void {
+    this.petHitState = state;
+    this.petHitRegion = state.region;
+    this.syncClickThroughFromCursor();
+  }
+
+  /**
+   * 交互锁：拖拽、菜单、窗口边框模式下禁止穿透
+   */
+  setClickThroughInteractionLock(locked: boolean): void {
+    this.clickThroughInteractionLocked = locked;
+    this.syncClickThroughFromCursor();
+  }
+
+  /**
+   * 主进程光标轮询：在 OS 层同步切换穿透，避免渲染进程 IPC 延迟导致点击丢失
+   */
+  startClickThroughMonitor(): void {
+    if (this.clickThroughMonitorHandle) {
+      return;
+    }
+    this.syncClickThroughFromCursor();
+    this.clickThroughMonitorHandle = setInterval(() => {
+      this.syncClickThroughFromCursor();
+    }, 16);
+  }
+
+  stopClickThroughMonitor(): void {
+    if (this.clickThroughMonitorHandle) {
+      clearInterval(this.clickThroughMonitorHandle);
+      this.clickThroughMonitorHandle = null;
+    }
+  }
+
+  private syncClickThroughFromCursor(): void {
+    if (!this.window || this.window.isDestroyed()) {
+      return;
+    }
+
+    if (this.clickThroughInteractionLocked || this.currentState.resizeFrameEnabled) {
+      this.setClickThrough(false);
+      return;
+    }
+
+    const cursor = screen.getCursorScreenPoint();
+    const bounds = this.window.getBounds();
+    const localX = cursor.x - bounds.x;
+    const localY = cursor.y - bounds.y;
+
+    const inWindow =
+      localX >= 0 &&
+      localY >= 0 &&
+      localX < bounds.width &&
+      localY < bounds.height;
+
+    if (!inWindow) {
+      this.setClickThrough(true, { forward: true });
+      return;
+    }
+
+    const region = this.petHitState.region ?? this.petHitRegion;
+    const state = this.petHitState;
+    const pointerSynced =
+      state.hasPointer &&
+      Math.hypot(localX - state.pointerLocalX, localY - state.pointerLocalY) <=
+        PET_POINTER_SYNC_TOLERANCE;
+
+    if (pointerSynced) {
+      this.setClickThrough(!state.pointerOnPet, { forward: true });
+      return;
+    }
+
+    if (!region) {
+      this.setClickThrough(true, { forward: true });
+      return;
+    }
+
+    const padding = PET_HIT_REGION_PADDING;
+    const onPet =
+      localX >= region.minX - padding &&
+      localX <= region.maxX + padding &&
+      localY >= region.minY - padding &&
+      localY <= region.maxY + padding;
+
+    this.setClickThrough(!onPet, { forward: true });
   }
 
   /**
@@ -565,6 +690,7 @@ export class WindowManager implements IWindowManager {
     }
 
     logger.debug('Resize frame enabled', enabled);
+    this.syncClickThroughFromCursor();
   }
 
   isResizeFrameEnabled(): boolean {
@@ -863,6 +989,7 @@ export class WindowManager implements IWindowManager {
 
         this.currentState.position = newPosition;
         this.notifyMoveCallbacks(newPosition);
+        this.syncClickThroughFromCursor();
         if (this.currentState.resizeFrameEnabled) {
           this.scheduleLayoutSave();
         }
@@ -876,6 +1003,7 @@ export class WindowManager implements IWindowManager {
       }
       const bounds = this.window.getBounds();
       this.currentState.size = { width: bounds.width, height: bounds.height };
+      this.syncClickThroughFromCursor();
       this.scheduleLayoutSave();
     });
 

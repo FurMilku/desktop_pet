@@ -131,8 +131,12 @@ export function clampWindowHeight(height: number): number {
   );
 }
 
+/** 100% 显示缩放下可存的最小倍率；高 DPI 下有效最小值 = 本值 × Windows 缩放比例 */
+export const MIN_MODEL_SCALE = 0.15;
+export const MAX_MODEL_SCALE = 3;
+
 export function clampModelScale(scale: number): number {
-  return Math.min(3, Math.max(0.35, scale));
+  return Math.min(MAX_MODEL_SCALE, Math.max(MIN_MODEL_SCALE, scale));
 }
 
 export function clampModelBrightness(brightness: number): number {

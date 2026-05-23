@@ -38,6 +38,31 @@ export const PET_FLY_VIEWPORT_PADDING = 56;
 /** 设置项：是否显示窗口边缘并允许手动调整大小 */
 export const SETTING_SHOW_WINDOW_FRAME = 'pet.showWindowFrame';
 
+/** 宠物投影命中区域（窗口内局部像素坐标） */
+export interface PetHitRegion {
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
+}
+
+/** 主进程光标命中检测 padding（像素，仅用于窗口移动等 fallback） */
+export const PET_HIT_REGION_PADDING = 4;
+
+/** 渲染进程指针状态与主进程光标位置的最大允许偏差（像素） */
+export const PET_POINTER_SYNC_TOLERANCE = 4;
+
+/** 主进程收到的宠物命中状态（每帧由渲染进程推送） */
+export interface PetHitState {
+  /** 模型投影包围盒（窗口内局部像素），仅作 fallback */
+  region: PetHitRegion | null;
+  /** 渲染进程在 pointerLocal 处的命中结果 */
+  pointerOnPet: boolean;
+  pointerLocalX: number;
+  pointerLocalY: number;
+  hasPointer: boolean;
+}
+
 // ============================================================================
 // 窗口尺寸对象（便于解构使用）
 // ============================================================================

@@ -13,7 +13,6 @@ import type {
 } from '../../shared/config/pet-desktop-settings';
 import {
   clampModelBrightness,
-  clampModelScale,
   clampWindowHeight,
   clampWindowWidth,
   normalizePetDesktopConfig,
@@ -24,11 +23,18 @@ import {
   clampPlaybackSpeed,
   clampSourceAnimationFps,
 } from '../../shared/config/pet-model-settings';
+import {
+  REFERENCE_DISPLAY_SCALE,
+  applyDisplayScaleToModelScale,
+  effectiveModelScaleLimits,
+  unapplyDisplayScaleFromModelScale,
+} from '../../shared/config/display-scale';
 
 interface DisplayInfo {
   id: number;
   bounds: { x: number; y: number; width: number; height: number };
   isPrimary: boolean;
+  scaleFactor: number;
 }
 
 interface PetLiveLayout {
@@ -78,6 +84,7 @@ interface PetDesktopAPI {
 interface WindowAPI {
   getPosition: () => Promise<{ x: number; y: number; monitor: number }>;
   getDisplays: () => Promise<DisplayInfo[]>;
+  getDisplayScale: () => Promise<number>;
 }
 
 declare global {
@@ -101,6 +108,8 @@ let editingSequenceId: string | null = null;
 let previewTimer: ReturnType<typeof setTimeout> | null = null;
 let livePollTimer: ReturnType<typeof setInterval> | null = null;
 const focusedLayoutFields = new Set<string>();
+/** 当前设置窗口所在显示器的 Windows 缩放倍率 */
+let displayScaleFactor = REFERENCE_DISPLAY_SCALE;
 
 const el = {
   modelFile: document.getElementById('model-file') as HTMLSelectElement,
@@ -143,7 +152,38 @@ function formatLiveSize(layout: PetLiveLayout): string {
 }
 
 function formatLiveScale(layout: PetLiveLayout): string {
-  return `当前实际：模型缩放 ${layout.modelScale.toFixed(2)}×`;
+  const pct = Math.round(displayScaleFactor * 100);
+  return `当前实际：模型缩放 ${layout.modelScale.toFixed(2)}×（Windows ${pct}%）`;
+}
+
+function modelScaleForDisplay(storedScale: number): number {
+  return applyDisplayScaleToModelScale(storedScale, displayScaleFactor);
+}
+
+function updateModelScaleSliderRange(): void {
+  const { min, max } = effectiveModelScaleLimits(displayScaleFactor);
+  el.modelScale.min = String(min);
+  el.modelScale.max = String(max);
+}
+
+function setModelScaleInputs(storedScale: number): void {
+  updateModelScaleSliderRange();
+  const displayScale = modelScaleForDisplay(storedScale);
+  el.modelScale.value = String(displayScale);
+  el.modelScaleValue.textContent = displayScale.toFixed(2);
+}
+
+async function refreshDisplayScaleFactor(): Promise<void> {
+  const nextScale = await api?.window?.getDisplayScale?.();
+  if (typeof nextScale === 'number' && nextScale > 0) {
+    const scaleChanged = Math.abs(nextScale - displayScaleFactor) >= 0.001;
+    displayScaleFactor = nextScale;
+    if (scaleChanged && draft) {
+      setModelScaleInputs(draft.modelScale);
+    } else {
+      updateModelScaleSliderRange();
+    }
+  }
 }
 
 function formatLiveBrightness(layout: PetLiveLayout): string {
@@ -240,7 +280,7 @@ function bindLayoutLiveControls(): void {
 function startLivePolling(): void {
   if (livePollTimer) clearInterval(livePollTimer);
   livePollTimer = setInterval(() => {
-    void refreshLiveLayout();
+    void refreshDisplayScaleFactor().then(() => refreshLiveLayout());
   }, 300);
 }
 
@@ -273,8 +313,7 @@ async function applyModelSpecificSettings(modelFileName: string | null): Promise
     await api.pet.getConfigForModel(modelFileName)
   );
   draft = { ...draft!, ...config, modelFileName: config.modelFileName };
-  el.modelScale.value = String(config.modelScale);
-  el.modelScaleValue.textContent = config.modelScale.toFixed(2);
+  setModelScaleInputs(config.modelScale);
   el.sourceAnimationFps.value = String(config.sourceAnimationFps);
   el.playbackSpeed.value = String(config.playbackSpeed);
   el.playbackSpeedValue.textContent = config.playbackSpeed.toFixed(2);
@@ -755,8 +794,7 @@ function fillForm(config: PetDesktopConfig): void {
   populateModelSelect(config.modelFileName);
   el.windowWidth.value = String(config.windowWidth);
   el.windowHeight.value = String(config.windowHeight);
-  el.modelScale.value = String(config.modelScale);
-  el.modelScaleValue.textContent = config.modelScale.toFixed(2);
+  setModelScaleInputs(config.modelScale);
   el.sourceAnimationFps.value = String(config.sourceAnimationFps);
   el.playbackSpeed.value = String(config.playbackSpeed);
   el.playbackSpeedValue.textContent = config.playbackSpeed.toFixed(2);
@@ -777,7 +815,10 @@ function readForm(): PetDesktopConfig {
     modelFileName,
     windowWidth: clampWindowWidth(Number(el.windowWidth.value)),
     windowHeight: clampWindowHeight(Number(el.windowHeight.value)),
-    modelScale: clampModelScale(Number(el.modelScale.value)),
+    modelScale: unapplyDisplayScaleFromModelScale(
+      Number(el.modelScale.value),
+      displayScaleFactor
+    ),
     sourceAnimationFps: clampSourceAnimationFps(Number(el.sourceAnimationFps.value)),
     playbackSpeed: clampPlaybackSpeed(Number(el.playbackSpeed.value)),
     modelBrightness: clampModelBrightness(Number(el.modelBrightness.value)),
@@ -834,8 +875,7 @@ async function reloadSettingsAfterApply(applied: PetDesktopConfig): Promise<void
   populateModelSelect(applied.modelFileName);
   el.windowWidth.value = String(applied.windowWidth);
   el.windowHeight.value = String(applied.windowHeight);
-  el.modelScale.value = String(applied.modelScale);
-  el.modelScaleValue.textContent = applied.modelScale.toFixed(2);
+  setModelScaleInputs(applied.modelScale);
   el.sourceAnimationFps.value = String(applied.sourceAnimationFps);
   el.playbackSpeed.value = String(applied.playbackSpeed);
   el.playbackSpeedValue.textContent = applied.playbackSpeed.toFixed(2);
@@ -874,6 +914,7 @@ async function init(): Promise<void> {
 
   modelFileNames = (await api.pet.listModels?.()) ?? [];
   clipNames = (await api.pet.getAnimationClips()) ?? [];
+  await refreshDisplayScaleFactor();
   const config = normalizePetDesktopConfig(await api.pet.getDesktopConfig());
   await reloadSequenceSummaries(config.modelFileName);
   savedConfig = config;
@@ -891,7 +932,9 @@ window.addEventListener('beforeunload', () => {
 });
 
 el.modelFile.addEventListener('change', () => {
-  void applyModelSpecificSettings(selectedModelFileName());
+  void applyModelSpecificSettings(selectedModelFileName()).then(() => {
+    scheduleConfigPreview();
+  });
 });
 
 el.modelScale.addEventListener('input', () => {

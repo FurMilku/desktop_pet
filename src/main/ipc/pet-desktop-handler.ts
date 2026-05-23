@@ -1,6 +1,7 @@
 import { ipcMain, IpcMainInvokeEvent } from 'electron';
 import type { PetDesktopConfig } from '../../shared/config/pet-desktop-settings';
 import { normalizePetDesktopConfig } from '../../shared/config/pet-desktop-settings';
+import { applyDisplayScaleToModelScale } from '../../shared/config/display-scale';
 import { emitToWindow } from '../ipc-handlers';
 import { getLogger } from '../logger';
 import { getWindowManager } from '../window-manager';
@@ -94,10 +95,11 @@ function emitPetDesktopConfigToMainWindow(
 
 export function getLiveLayoutFromMainWindow(): PetLiveLayout {
   const state = getWindowManager().getWindowState();
+  const displayScale = getWindowManager().getCurrentDisplay().scaleFactor;
   return {
     windowWidth: state.size.width,
     windowHeight: state.size.height,
-    modelScale: liveModelScale,
+    modelScale: applyDisplayScaleToModelScale(liveModelScale, displayScale),
     modelBrightness: liveModelBrightness,
     position: {
       x: state.position.x,

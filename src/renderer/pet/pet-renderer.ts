@@ -20,6 +20,7 @@ const MikkTSpace = MikkTSpaceModule as {
     texcoord: Float32Array
   ) => Float32Array;
 };
+import { computeAutoFitScaleMultiplier } from '../../shared/config/model-autofit';
 import { normalizeAnimationClipTiming, SOURCE_ANIMATION_FPS } from './clip-timing';
 import { isCombatLikeClipName } from './combat-clip-filter';
 import { fixMeshGameUvLayout } from './game-model-uv-fix';
@@ -147,6 +148,8 @@ export interface ModelLoadOptions {
   autoFit?: boolean;
   /** autoFit 时的目标最大尺寸（世界单位） */
   autoFitSize?: number;
+  /** 用户缩放倍率（相对 autoFit 后基准；加载时应在取景前应用） */
+  modelScaleFactor?: number;
 }
 
 /**
@@ -236,8 +239,12 @@ export interface IPetRenderer {
   isRendering(): boolean;
   /** 获取当前 FPS */
   getFPS(): number;
-  /** 检测屏幕坐标是否命中宠物模型（用于点击穿透） */
+  /** 检测屏幕坐标是否命中宠物模型（严格射线，用于点击/拖拽） */
   hitTest(clientX: number, clientY: number): boolean;
+  /** 光标捕获用命中（射线 + 极小 padding，供主进程穿透切换） */
+  hitTestPointerCapture(clientX: number, clientY: number): boolean;
+  /** 模型在容器内的投影包围盒（窗口局部像素，供主进程光标命中） */
+  getHitRegionRect(): { minX: number; maxX: number; minY: number; maxY: number } | null;
   /** 播放随机互动动画（播完后回到待机） */
   playInteractionReaction(): void;
   /** 右键菜单可播放的动画列表 */
@@ -281,30 +288,10 @@ export interface IPetRenderer {
   getSourceAnimationFps(): number;
   /** 悬停阶段：滑翔/悬停切换 */
   setFlyLoopHoverMode(hover: boolean): void;
-  /** 飞行循环：左右绕 Y 轴转向，上下俯仰 */
-  updateDragFlyLoopInput(
-    deltaX: number,
-    deltaY: number,
-    mouseScreenX: number,
-    mouseScreenY: number,
-    windowScreenX: number,
-    windowScreenY: number,
-    windowWidth: number,
-    windowHeight: number,
-    chaseComplete: boolean
-  ): void;
+  /** 飞行循环：根据窗口移动更新俯仰/偏航 */
+  updateDragFlyLoopInput(moveDx: number, moveDy: number, chaseComplete: boolean): void;
   /** 行走拖拽：转向输入（与飞行循环独立） */
-  updateWalkDragLoopInput(
-    deltaX: number,
-    deltaY: number,
-    mouseScreenX: number,
-    mouseScreenY: number,
-    windowScreenX: number,
-    windowScreenY: number,
-    windowWidth: number,
-    windowHeight: number,
-    chaseComplete: boolean
-  ): void;
+  updateWalkDragLoopInput(moveDx: number, moveDy: number, chaseComplete: boolean): void;
   /** 飞行悬停且已对齐时，俯仰/偏航/侧倾回到中性 */
   resetFlyLoopOrientation(): void;
   /** 行走拖拽：朝向回到中性 */
@@ -495,15 +482,27 @@ export class PetRenderer implements IPetRenderer {
   private lastViewportRequestHeight = 0;
   private static readonly FLY_VIEWPORT_RESIZE_INTERVAL_MS = 200;
   private static readonly IDLE_VIEWPORT_RESIZE_INTERVAL_MS = 400;
+  /** 屏幕投影包围盒命中 padding（像素），仅用于 pointer capture 极小兜底 */
+  private static readonly HIT_TEST_SCREEN_PADDING = 4;
+  /** autoFit / 相机取景：剔除相对中位尺寸过大的辅助网格 */
+  private static readonly AUTOFIT_BBOX_OUTLIER_RATIO = 8;
+  /** 点击穿透 / 命中区域：更紧的包围盒，避免空白区误触 */
+  private static readonly HIT_BBOX_OUTLIER_RATIO = 4;
   private static readonly VIEWPORT_SIZE_EPS = 10;
   private static readonly FLY_YAW_LERP = 0.14;
   private static readonly FLY_TILT_LERP = 0.1;
   private static readonly FLY_RESET_LERP = 0.18;
   private static readonly FLY_YAW_FROM_DX = 0.034;
   private static readonly FLY_BANK_FROM_YAW = 2.8;
+  private static readonly FLY_MOVE_STEER_FULL_SPEED = 12;
+  private static readonly FLY_MOVE_STEER_IDLE_THRESHOLD = 1.25;
   private static readonly FLY_MAX_PITCH = 0.38;
   private static readonly FLY_MAX_ROLL = 0.5;
   private static readonly FLY_MAX_YAW = 0.72;
+  /** 行走拖拽：俯仰/偏航幅度大于飞行 */
+  private static readonly WALK_MAX_PITCH = 0.56;
+  private static readonly WALK_MAX_ROLL = 0.62;
+  private static readonly WALK_MAX_YAW = 1.05;
   private static readonly FLY_HORIZ_TURN_THRESHOLD = 1.2;
   private static readonly FLY_AIM_MOUSE_MIN_DIST = 28;
   /** 起飞至少播放此时长（毫秒，墙上时钟）再允许切入滑翔，避免高倍速下被循环动画立刻打断 */
@@ -559,6 +558,8 @@ export class PetRenderer implements IPetRenderer {
   private cameraLocked = false;
   /** 绑定姿势下的最小相机距离（动画再大也只拉远、不比初始更近） */
   private baselineCameraDistance = 0;
+  /** 绑定姿势下包围盒最大轴向尺寸（相机自适应只补偿动画超出部分，不抵消用户缩放） */
+  private bindPoseBoundsMaxDim = 0;
   /** 平滑后的注视点 */
   private readonly adaptiveLookAt = new THREE.Vector3();
   /** 平滑后的相机距离 */
@@ -872,6 +873,14 @@ export class PetRenderer implements IPetRenderer {
       this.modelBasePosition.copy(this.model.position);
       this.modelBaseRotationY = this.model.rotation.y;
       this.baseModelScale = this.model.scale.x;
+      this.modelScaleFactor = 1;
+      if (
+        options.modelScaleFactor !== undefined &&
+        Number.isFinite(options.modelScaleFactor) &&
+        options.modelScaleFactor > 0
+      ) {
+        this.modelScaleFactor = options.modelScaleFactor;
+      }
       this.applyModelScaleFactor();
 
       // 相机须在 autoFit + 用户缩放倍率之后再取景，否则重载后画面里模型偏大
@@ -884,6 +893,7 @@ export class PetRenderer implements IPetRenderer {
 
       this.resetFlyOrientationState();
       this.captureBindPoseLocks();
+      this.rebuildBindPoseBoundsReference();
 
       // 创建动画混合器
       this.mixer = new THREE.AnimationMixer(this.model);
@@ -1422,25 +1432,58 @@ export class PetRenderer implements IPetRenderer {
 
   /**
    * 仅根据可见网格计算包围盒（忽略骨骼/locator 等辅助节点）
+   * @param maxOutlierRatio 相对中位对角线的倍数上限，越大越宽松
    */
-  private getMeshBoundingBox(model: THREE.Object3D): THREE.Box3 {
+  private getMeshBoundingBox(
+    model: THREE.Object3D,
+    maxOutlierRatio = PetRenderer.AUTOFIT_BBOX_OUTLIER_RATIO
+  ): THREE.Box3 {
     const box = new THREE.Box3();
-    let hasMesh = false;
+    const meshBoxes: THREE.Box3[] = [];
+    const meshDiagonals: number[] = [];
 
     model.traverse((child) => {
-      if (child instanceof THREE.Mesh && child.geometry) {
-        child.geometry.computeBoundingBox();
-        if (child.geometry.boundingBox) {
-          const meshBox = child.geometry.boundingBox.clone();
-          meshBox.applyMatrix4(child.matrixWorld);
-          box.union(meshBox);
-          hasMesh = true;
-        }
+      if (!(child instanceof THREE.Mesh) || !child.visible || !child.geometry) {
+        return;
       }
+
+      const materials = Array.isArray(child.material) ? child.material : [child.material];
+      const hasVisibleMaterial = materials.some(
+        (mat) => mat instanceof THREE.Material && mat.visible
+      );
+      if (!hasVisibleMaterial) {
+        return;
+      }
+
+      child.geometry.computeBoundingBox();
+      if (!child.geometry.boundingBox) {
+        return;
+      }
+
+      const meshBox = child.geometry.boundingBox.clone();
+      meshBox.applyMatrix4(child.matrixWorld);
+      meshBoxes.push(meshBox);
+      meshDiagonals.push(meshBox.getSize(new THREE.Vector3()).length());
     });
 
-    if (!hasMesh) {
+    if (meshBoxes.length === 0) {
       box.setFromObject(model);
+      return box;
+    }
+
+    // 手游 GLB（如裘卡）偶有超大辅助网格，会压低 autoFit 导致切模型后视觉尺寸跳变
+    const sorted = [...meshDiagonals].sort((a, b) => a - b);
+    const median = sorted[Math.floor(sorted.length / 2)] ?? sorted[0]!;
+    const outlierLimit = Math.max(median * maxOutlierRatio, median + 1e-6);
+
+    for (let i = 0; i < meshBoxes.length; i++) {
+      if (meshDiagonals[i]! <= outlierLimit) {
+        box.union(meshBoxes[i]!);
+      }
+    }
+
+    if (box.isEmpty()) {
+      box.copy(meshBoxes[0]!);
     }
     return box;
   }
@@ -1566,6 +1609,25 @@ export class PetRenderer implements IPetRenderer {
         obj.scale.copy(pose.scale);
       }
     }
+  }
+
+  /** 记录当前绑定姿势下的包围盒基准，供相机/命中仅补偿动画溢出 */
+  private rebuildBindPoseBoundsReference(): void {
+    if (!this.model) {
+      this.bindPoseBoundsMaxDim = 0;
+      return;
+    }
+    this.model.updateMatrixWorld(true);
+    const size = this.getMeshBoundingBox(this.model).getSize(new THREE.Vector3());
+    this.bindPoseBoundsMaxDim = Math.max(size.x, size.y, size.z);
+  }
+
+  private isRaycastableMesh(object: THREE.Object3D): boolean {
+    if (!(object instanceof THREE.Mesh) || !object.visible || !object.geometry) {
+      return false;
+    }
+    const materials = Array.isArray(object.material) ? object.material : [object.material];
+    return materials.some((mat) => mat instanceof THREE.Material && mat.visible);
   }
 
   /**
@@ -1765,11 +1827,9 @@ export class PetRenderer implements IPetRenderer {
 
     const box = this.getMeshBoundingBox(model);
     const size = box.getSize(new THREE.Vector3());
-    // 取最大轴向尺寸（含翅膀展宽），确保整体能入镜
-    const maxDim = Math.max(size.x, size.y, size.z);
-
-    if (maxDim > 0) {
-      model.scale.multiplyScalar(targetSize / maxDim);
+    const autoFitScale = computeAutoFitScaleMultiplier(size, targetSize);
+    if (autoFitScale !== 1) {
+      model.scale.multiplyScalar(autoFitScale);
     }
 
     model.updateMatrixWorld(true);
@@ -1865,7 +1925,7 @@ export class PetRenderer implements IPetRenderer {
     }
 
     root.updateMatrixWorld(true);
-    const box = this.getMeshBoundingBox(root);
+    const box = this.getMeshBoundingBox(root, PetRenderer.HIT_BBOX_OUTLIER_RATIO);
     if (box.isEmpty()) {
       return null;
     }
@@ -1911,6 +1971,31 @@ export class PetRenderer implements IPetRenderer {
     }
 
     return { minX, maxX, minY, maxY };
+  }
+
+  /**
+   * 屏幕坐标是否落在模型投影包围盒内（含 padding）
+   */
+  private isPointInProjectedScreenRect(
+    clientX: number,
+    clientY: number,
+    padding = PetRenderer.HIT_TEST_SCREEN_PADDING
+  ): boolean {
+    const screenRect = this.getProjectedScreenRect();
+    if (!screenRect) {
+      return false;
+    }
+
+    const bounds = this.config.container.getBoundingClientRect();
+    const localX = clientX - bounds.left;
+    const localY = clientY - bounds.top;
+
+    return (
+      localX >= screenRect.minX - padding &&
+      localX <= screenRect.maxX + padding &&
+      localY >= screenRect.minY - padding &&
+      localY <= screenRect.maxY + padding
+    );
   }
 
   /**
@@ -2086,7 +2171,6 @@ export class PetRenderer implements IPetRenderer {
       this.smoothedFlyRoll,
       'YXZ'
     );
-
   }
 
   /**
@@ -2146,13 +2230,45 @@ export class PetRenderer implements IPetRenderer {
       flyYawLerp: PetRenderer.FLY_YAW_LERP,
       flyTiltLerp: PetRenderer.FLY_TILT_LERP,
       flyResetLerp: PetRenderer.FLY_RESET_LERP,
-      flyYawFromDx: PetRenderer.FLY_YAW_FROM_DX,
+      flyBankFromYaw: PetRenderer.FLY_BANK_FROM_YAW,
+      flyMaxPitch: PetRenderer.WALK_MAX_PITCH,
+      flyMaxRoll: PetRenderer.WALK_MAX_ROLL,
+      flyMaxYaw: PetRenderer.WALK_MAX_YAW,
+      moveSteerFullSpeed: PetRenderer.FLY_MOVE_STEER_FULL_SPEED,
+      moveSteerIdleThreshold: PetRenderer.FLY_MOVE_STEER_IDLE_THRESHOLD,
+    };
+  }
+
+  private getFlyDragSteerConstants(): WalkDragSteerConstants {
+    return {
+      flyYawLerp: PetRenderer.FLY_YAW_LERP,
+      flyTiltLerp: PetRenderer.FLY_TILT_LERP,
+      flyResetLerp: PetRenderer.FLY_RESET_LERP,
       flyBankFromYaw: PetRenderer.FLY_BANK_FROM_YAW,
       flyMaxPitch: PetRenderer.FLY_MAX_PITCH,
       flyMaxRoll: PetRenderer.FLY_MAX_ROLL,
       flyMaxYaw: PetRenderer.FLY_MAX_YAW,
-      flyHorizTurnThreshold: PetRenderer.FLY_HORIZ_TURN_THRESHOLD,
+      moveSteerFullSpeed: PetRenderer.FLY_MOVE_STEER_FULL_SPEED,
+      moveSteerIdleThreshold: PetRenderer.FLY_MOVE_STEER_IDLE_THRESHOLD,
     };
+  }
+
+  private getFlyDragSteerState(): WalkDragSteerState {
+    return {
+      walkLoopSteerStartMs: this.flyLoopSteerStartMs,
+      flyYawOffsetTarget: this.flyYawOffsetTarget,
+      flyYawOffsetSmoothed: this.flyYawOffsetSmoothed,
+      dragPitchTarget: this.dragPitchTarget,
+      dragRollTarget: this.dragRollTarget,
+      smoothedFlyPitch: this.smoothedFlyPitch,
+      smoothedFlyRoll: this.smoothedFlyRoll,
+    };
+  }
+
+  private syncFlyDragSteerState(state: WalkDragSteerState): void {
+    this.flyYawOffsetTarget = state.flyYawOffsetTarget;
+    this.dragPitchTarget = state.dragPitchTarget;
+    this.dragRollTarget = state.dragRollTarget;
   }
 
   private getWalkDragSteerState(): WalkDragSteerState {
@@ -2160,31 +2276,15 @@ export class PetRenderer implements IPetRenderer {
     return this.walkDragSteer;
   }
 
-  updateWalkDragLoopInput(
-    deltaX: number,
-    deltaY: number,
-    mouseScreenX: number,
-    mouseScreenY: number,
-    windowScreenX: number,
-    windowScreenY: number,
-    windowWidth: number,
-    windowHeight: number,
-    chaseComplete: boolean
-  ): void {
+  updateWalkDragLoopInput(moveDx: number, moveDy: number, chaseComplete: boolean): void {
     if (!this.dragWalkActive) {
       return;
     }
     updateWalkDragSteerInput(
       this.getWalkDragSteerState(),
       this.getWalkDragSteerConstants(),
-      deltaX,
-      deltaY,
-      mouseScreenX,
-      mouseScreenY,
-      windowScreenX,
-      windowScreenY,
-      windowWidth,
-      windowHeight,
+      moveDx,
+      moveDy,
       chaseComplete
     );
   }
@@ -2200,83 +2300,20 @@ export class PetRenderer implements IPetRenderer {
     );
   }
 
-  updateDragFlyLoopInput(
-    deltaX: number,
-    deltaY: number,
-    mouseScreenX: number,
-    mouseScreenY: number,
-    windowScreenX: number,
-    windowScreenY: number,
-    windowWidth: number,
-    windowHeight: number,
-    chaseComplete: boolean
-  ): void {
+  updateDragFlyLoopInput(moveDx: number, moveDy: number, chaseComplete: boolean): void {
     if (this.dragFlyPhase !== 'loop') {
       return;
     }
 
-    const steerRamp = Math.min(
-      1,
-      (performance.now() - this.flyLoopSteerStartMs) / PetRenderer.FLY_LOOP_STEER_RAMP_MS
+    const state = this.getFlyDragSteerState();
+    updateWalkDragSteerInput(
+      state,
+      this.getFlyDragSteerConstants(),
+      moveDx,
+      moveDy,
+      chaseComplete
     );
-    const steer = steerRamp * steerRamp;
-
-    const microMove = Math.hypot(deltaX, deltaY) < 2.5;
-
-    if (chaseComplete && microMove) {
-      const r = PetRenderer.FLY_RESET_LERP;
-      this.flyYawOffsetTarget = THREE.MathUtils.lerp(this.flyYawOffsetTarget, 0, r);
-      this.dragPitchTarget = THREE.MathUtils.lerp(this.dragPitchTarget, 0, r);
-      this.dragRollTarget = THREE.MathUtils.lerp(this.dragRollTarget, 0, r);
-      return;
-    }
-
-    const centerX = windowScreenX + windowWidth * 0.5;
-    const centerY = windowScreenY + windowHeight * 0.52;
-    const toX = mouseScreenX - centerX;
-    const toY = mouseScreenY - centerY;
-    const aimDist = Math.hypot(toX, toY);
-    const aim = Math.min(aimDist / 200, 1) * steer;
-
-    if (!chaseComplete) {
-      // 鼠标停住仍在飞向目标时：持续朝鼠标相对窗口中心的方向偏航/俯仰
-      const targetYaw = THREE.MathUtils.clamp(
-        toX * 0.0035 * aim,
-        -PetRenderer.FLY_MAX_YAW,
-        PetRenderer.FLY_MAX_YAW
-      );
-      const targetPitch = THREE.MathUtils.clamp(
-        toY * 0.0028 * aim,
-        -PetRenderer.FLY_MAX_PITCH,
-        PetRenderer.FLY_MAX_PITCH
-      );
-      const steerLerp = 0.1 * Math.max(steer, 0.15);
-      this.flyYawOffsetTarget = THREE.MathUtils.lerp(this.flyYawOffsetTarget, targetYaw, steerLerp);
-      this.dragPitchTarget = THREE.MathUtils.lerp(this.dragPitchTarget, targetPitch, steerLerp);
-
-      if (Math.abs(deltaX) > PetRenderer.FLY_HORIZ_TURN_THRESHOLD) {
-        this.flyYawOffsetTarget += deltaX * PetRenderer.FLY_YAW_FROM_DX * 0.5 * steer;
-        this.flyYawOffsetTarget = THREE.MathUtils.clamp(
-          this.flyYawOffsetTarget,
-          -PetRenderer.FLY_MAX_YAW,
-          PetRenderer.FLY_MAX_YAW
-        );
-      }
-    } else if (Math.abs(deltaX) > PetRenderer.FLY_HORIZ_TURN_THRESHOLD) {
-      this.flyYawOffsetTarget += deltaX * PetRenderer.FLY_YAW_FROM_DX * steer;
-      this.flyYawOffsetTarget = THREE.MathUtils.clamp(
-        this.flyYawOffsetTarget,
-        -PetRenderer.FLY_MAX_YAW,
-        PetRenderer.FLY_MAX_YAW
-      );
-    }
-
-    const yawRate = this.flyYawOffsetTarget - this.flyYawOffsetSmoothed;
-    this.dragRollTarget = THREE.MathUtils.clamp(
-      -yawRate * PetRenderer.FLY_BANK_FROM_YAW * steer,
-      -PetRenderer.FLY_MAX_ROLL,
-      PetRenderer.FLY_MAX_ROLL
-    );
+    this.syncFlyDragSteerState(state);
   }
 
   /**
@@ -2331,8 +2368,12 @@ export class PetRenderer implements IPetRenderer {
 
     const center = box.getCenter(new THREE.Vector3());
     const size = box.getSize(new THREE.Vector3());
-    const neededDistance = this.computeCameraDistanceForSize(size);
-    const targetDistance = Math.max(this.baselineCameraDistance, neededDistance);
+    const currentMaxDim = Math.max(size.x, size.y, size.z);
+    const overflowScale =
+      this.bindPoseBoundsMaxDim > 1e-6
+        ? Math.max(1, currentMaxDim / this.bindPoseBoundsMaxDim)
+        : 1;
+    const targetDistance = this.baselineCameraDistance * overflowScale;
 
     if (immediate) {
       this.adaptiveLookAt.copy(center);
@@ -2375,9 +2416,30 @@ export class PetRenderer implements IPetRenderer {
   }
 
   /**
-   * 屏幕坐标命中检测
+   * 模型投影包围盒（容器局部像素）
+   */
+  getHitRegionRect(): { minX: number; maxX: number; minY: number; maxY: number } | null {
+    return this.getProjectedScreenRect();
+  }
+
+  /**
+   * 屏幕坐标命中检测（严格射线，用于点击/拖拽）
    */
   hitTest(clientX: number, clientY: number): boolean {
+    return this.raycastHit(clientX, clientY);
+  }
+
+  /**
+   * 光标捕获命中：射线优先，动画间隙用极小 padding 包围盒兜底
+   */
+  hitTestPointerCapture(clientX: number, clientY: number): boolean {
+    if (this.raycastHit(clientX, clientY)) {
+      return true;
+    }
+    return this.isPointInProjectedScreenRect(clientX, clientY, PetRenderer.HIT_TEST_SCREEN_PADDING);
+  }
+
+  private raycastHit(clientX: number, clientY: number): boolean {
     if (!this.camera || !this.model) {
       return false;
     }
@@ -2400,7 +2462,7 @@ export class PetRenderer implements IPetRenderer {
       return false;
     }
     const hits = this.hitRaycaster.intersectObject(root, true);
-    return hits.length > 0;
+    return hits.some((hit) => this.isRaycastableMesh(hit.object));
   }
 
   /**
@@ -3070,11 +3132,13 @@ export class PetRenderer implements IPetRenderer {
   }
 
   setModelScaleFactor(factor: number): void {
-    this.modelScaleFactor = Math.min(3, Math.max(0.35, factor));
-    this.applyModelScaleFactor();
-    if (this.cameraLocked && this.model) {
-      this.refitCameraToAnimatedBounds(true);
+    if (!Number.isFinite(factor) || factor <= 0) {
+      return;
     }
+    this.modelScaleFactor = factor;
+    this.applyModelScaleFactor();
+    // 用户缩放应改变画面大小；勿按全包围盒重算相机距离（会抵消缩放）
+    this.rebuildBindPoseBoundsReference();
   }
 
   setModelBrightness(factor: number): void {
@@ -3695,12 +3759,12 @@ export class PetRenderer implements IPetRenderer {
       return;
     }
 
-    this.dragWalkActive = false;
     this.walkDragLocomotion = 'walk';
     this.walkLoopSteerStartMs = 0;
     this.flyCameraDistance = 0;
     this.resetWalkDragSteerState();
     this.resetFlyOrientationState();
+    this.dragWalkActive = false;
     this.ensureIdlePlaying();
     console.log('[PetRenderer] Walk drag ended');
   }
@@ -4008,8 +4072,10 @@ export class PetRenderer implements IPetRenderer {
     this.smoothedCameraDistance = 0;
     this.adaptiveLookAt.set(0, 0, 0);
     this.bindPoseLocks.clear();
+    this.bindPoseBoundsMaxDim = 0;
     this.modelBasePosition.set(0, 0, 0);
     this.baseModelScale = 1;
+    this.modelScaleFactor = 1;
   }
 
   /**

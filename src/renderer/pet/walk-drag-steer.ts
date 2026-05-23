@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 
-/** 行走拖拽转向（与飞行循环独立，避免共用 flyLoopSteerStartMs） */
+/** 拖拽转向渐入（与飞行循环独立，避免共用 flyLoopSteerStartMs） */
 export const WALK_LOOP_STEER_RAMP_MS = 620;
 
 export interface WalkDragSteerState {
@@ -17,28 +17,24 @@ export interface WalkDragSteerConstants {
   flyYawLerp: number;
   flyTiltLerp: number;
   flyResetLerp: number;
-  flyYawFromDx: number;
   flyBankFromYaw: number;
   flyMaxPitch: number;
   flyMaxRoll: number;
   flyMaxYaw: number;
-  flyHorizTurnThreshold: number;
+  /** 单帧位移达到该值时俯仰/偏航强度为满 */
+  moveSteerFullSpeed: number;
+  /** 低于该单帧位移视为静止并回正 */
+  moveSteerIdleThreshold: number;
 }
 
 /**
- * 行走拖拽：根据鼠标相对窗口位置更新朝向目标（仅 dragWalkActive 时由调用方保证）
+ * 拖拽：根据窗口自身移动方向/速度更新俯仰与偏航（非鼠标相对窗口偏移）
  */
 export function updateWalkDragSteerInput(
   state: WalkDragSteerState,
   constants: WalkDragSteerConstants,
-  deltaX: number,
-  deltaY: number,
-  mouseScreenX: number,
-  mouseScreenY: number,
-  windowScreenX: number,
-  windowScreenY: number,
-  windowWidth: number,
-  windowHeight: number,
+  moveDx: number,
+  moveDy: number,
   chaseComplete: boolean
 ): void {
   const steerRamp = Math.min(
@@ -46,36 +42,32 @@ export function updateWalkDragSteerInput(
     (performance.now() - state.walkLoopSteerStartMs) / WALK_LOOP_STEER_RAMP_MS
   );
   const steer = steerRamp * steerRamp;
-  // rAF 追窗口时传入 (0,0)，不应视为「鼠标微动」而回正俯仰
-  const hasMouseDelta = deltaX !== 0 || deltaY !== 0;
-  const microMove = hasMouseDelta && Math.hypot(deltaX, deltaY) < 2.5;
+  const moveSpeed = Math.hypot(moveDx, moveDy);
 
-  if (chaseComplete && microMove) {
-    const r = constants.flyResetLerp;
+  if (moveSpeed < constants.moveSteerIdleThreshold) {
+    const r = constants.flyResetLerp * (chaseComplete ? 1 : 0.4);
     state.flyYawOffsetTarget = THREE.MathUtils.lerp(state.flyYawOffsetTarget, 0, r);
     state.dragPitchTarget = THREE.MathUtils.lerp(state.dragPitchTarget, 0, r);
     state.dragRollTarget = THREE.MathUtils.lerp(state.dragRollTarget, 0, r);
     return;
   }
 
-  const centerX = windowScreenX + windowWidth * 0.5;
-  const centerY = windowScreenY + windowHeight * 0.52;
-  const toX = mouseScreenX - centerX;
-  const toY = mouseScreenY - centerY;
-  const aimDist = Math.hypot(toX, toY);
-  const aim = Math.min(aimDist / 200, 1) * steer;
+  const speedFactor = Math.min(moveSpeed / constants.moveSteerFullSpeed, 1) * steer;
+  const invSpeed = 1 / moveSpeed;
+  const dirX = moveDx * invSpeed;
+  const dirY = moveDy * invSpeed;
 
   const targetYaw = THREE.MathUtils.clamp(
-    toX * 0.0035 * aim,
+    dirX * constants.flyMaxYaw * speedFactor,
     -constants.flyMaxYaw,
     constants.flyMaxYaw
   );
   const targetPitch = THREE.MathUtils.clamp(
-    toY * 0.0028 * aim,
+    dirY * constants.flyMaxPitch * speedFactor,
     -constants.flyMaxPitch,
     constants.flyMaxPitch
   );
-  const steerLerp = 0.1 * Math.max(steer, 0.15);
+  const steerLerp = 0.14 * Math.max(steer, 0.2);
   state.flyYawOffsetTarget = THREE.MathUtils.lerp(
     state.flyYawOffsetTarget,
     targetYaw,
@@ -86,16 +78,6 @@ export function updateWalkDragSteerInput(
     targetPitch,
     steerLerp
   );
-
-  const deltaYawScale = chaseComplete ? 1 : 0.5;
-  if (Math.abs(deltaX) > constants.flyHorizTurnThreshold) {
-    state.flyYawOffsetTarget += deltaX * constants.flyYawFromDx * deltaYawScale * steer;
-    state.flyYawOffsetTarget = THREE.MathUtils.clamp(
-      state.flyYawOffsetTarget,
-      -constants.flyMaxYaw,
-      constants.flyMaxYaw
-    );
-  }
 
   const yawRate = state.flyYawOffsetTarget - state.flyYawOffsetSmoothed;
   state.dragRollTarget = THREE.MathUtils.clamp(

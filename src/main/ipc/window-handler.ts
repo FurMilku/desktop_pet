@@ -7,9 +7,10 @@
  * @see specs/001-desktop-3d-pet/contracts/ipc-api.md Window API
  */
 
-import { ipcMain, IpcMainInvokeEvent } from 'electron';
+import { BrowserWindow, ipcMain, IpcMainEvent, IpcMainInvokeEvent, screen } from 'electron';
 import { getWindowManager, DisplayInfo, WindowPosition } from '../window-manager';
 import { getLogger } from '../logger';
+import type { PetHitRegion, PetHitState } from '../../shared/config/pet-window';
 
 const logger = getLogger('window-handler');
 
@@ -36,6 +37,9 @@ export const WindowChannels = {
   GET_STATE: 'window:get-state',
   SET_RESIZE_FRAME: 'window:set-resize-frame',
   GET_RESIZE_FRAME: 'window:get-resize-frame',
+  GET_DISPLAY_SCALE: 'window:get-display-scale',
+  UPDATE_PET_HIT_REGION: 'window:update-pet-hit-region',
+  SET_CLICK_THROUGH_LOCK: 'window:set-click-through-lock',
 } as const;
 
 // ============================================================================
@@ -58,6 +62,7 @@ export interface DisplayInfoResponse {
   id: number;
   bounds: { x: number; y: number; width: number; height: number };
   isPrimary: boolean;
+  scaleFactor: number;
 }
 
 /**
@@ -125,6 +130,11 @@ export function registerWindowHandlers(): void {
 
   ipcMain.handle(WindowChannels.GET_RESIZE_FRAME, handleGetResizeFrame);
 
+  ipcMain.handle(WindowChannels.GET_DISPLAY_SCALE, handleGetDisplayScale);
+
+  ipcMain.on(WindowChannels.UPDATE_PET_HIT_REGION, handleUpdatePetHitRegion);
+  ipcMain.on(WindowChannels.SET_CLICK_THROUGH_LOCK, handleSetClickThroughLock);
+
   logger.info('Window IPC handlers registered');
 }
 
@@ -149,6 +159,10 @@ export function unregisterWindowHandlers(): void {
   ipcMain.removeHandler(WindowChannels.GET_STATE);
   ipcMain.removeHandler(WindowChannels.SET_RESIZE_FRAME);
   ipcMain.removeHandler(WindowChannels.GET_RESIZE_FRAME);
+  ipcMain.removeHandler(WindowChannels.GET_DISPLAY_SCALE);
+
+  ipcMain.removeAllListeners(WindowChannels.UPDATE_PET_HIT_REGION);
+  ipcMain.removeAllListeners(WindowChannels.SET_CLICK_THROUGH_LOCK);
 
   logger.info('Window IPC handlers unregistered');
 }
@@ -287,6 +301,7 @@ async function handleGetDisplays(
       id: display.id,
       bounds: { ...display.bounds },
       isPrimary: display.isPrimary,
+      scaleFactor: display.scaleFactor,
     }));
   } catch (error) {
     logger.error('Failed to get displays', error);
@@ -462,6 +477,85 @@ async function handleGetResizeFrame(_event: IpcMainInvokeEvent): Promise<boolean
   } catch (error) {
     logger.error('Failed to get resize frame state', error);
     throw createIPCError('ERR_INTERNAL', `Failed to get resize frame state: ${error}`);
+  }
+}
+
+function handleUpdatePetHitRegion(_event: IpcMainEvent, state: PetHitState | PetHitRegion | null): void {
+  try {
+    if (state === null) {
+      getWindowManager().setPetHitState({
+        region: null,
+        pointerOnPet: false,
+        pointerLocalX: 0,
+        pointerLocalY: 0,
+        hasPointer: false,
+      });
+      return;
+    }
+
+    if ('pointerOnPet' in state) {
+      if (
+        typeof state.pointerOnPet !== 'boolean' ||
+        typeof state.pointerLocalX !== 'number' ||
+        typeof state.pointerLocalY !== 'number' ||
+        typeof state.hasPointer !== 'boolean'
+      ) {
+        throw new Error('Invalid pet hit state');
+      }
+      if (
+        state.region !== null &&
+        (typeof state.region.minX !== 'number' ||
+          typeof state.region.maxX !== 'number' ||
+          typeof state.region.minY !== 'number' ||
+          typeof state.region.maxY !== 'number')
+      ) {
+        throw new Error('Invalid pet hit region');
+      }
+      getWindowManager().setPetHitState(state);
+      return;
+    }
+
+    if (
+      typeof state.minX !== 'number' ||
+      typeof state.maxX !== 'number' ||
+      typeof state.minY !== 'number' ||
+      typeof state.maxY !== 'number'
+    ) {
+      throw new Error('Invalid pet hit region');
+    }
+    getWindowManager().setPetHitRegion(state);
+  } catch (error) {
+    logger.error('Failed to update pet hit region', error);
+  }
+}
+
+function handleSetClickThroughLock(_event: IpcMainEvent, locked: unknown): void {
+  try {
+    if (typeof locked !== 'boolean') {
+      throw new Error('locked must be a boolean');
+    }
+    getWindowManager().setClickThroughInteractionLock(locked);
+  } catch (error) {
+    logger.error('Failed to set click-through lock', error);
+  }
+}
+
+async function handleGetDisplayScale(event: IpcMainInvokeEvent): Promise<number> {
+  try {
+    const senderWindow = BrowserWindow.fromWebContents(event.sender);
+    if (senderWindow && !senderWindow.isDestroyed()) {
+      const bounds = senderWindow.getBounds();
+      const display = screen.getDisplayNearestPoint({
+        x: bounds.x + Math.floor(bounds.width / 2),
+        y: bounds.y + Math.floor(bounds.height / 2),
+      });
+      return display.scaleFactor;
+    }
+
+    return getWindowManager().getCurrentDisplay().scaleFactor;
+  } catch (error) {
+    logger.error('Failed to get display scale', error);
+    throw createIPCError('ERR_INTERNAL', `Failed to get display scale: ${error}`);
   }
 }
 

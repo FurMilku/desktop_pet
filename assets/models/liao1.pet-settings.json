@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "modelScale": 1,
+  "modelScale": 0.15,
   "modelBrightness": 1,
   "sourceAnimationFps": 24,
   "playbackSpeed": 1,
@@ -35,6 +35,6 @@
         "weight": 10
       }
     ],
-    "activeSequenceId": null
+    "activeSequenceId": "world_dig"
   }
 }

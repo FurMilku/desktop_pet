@@ -8,6 +8,8 @@ import {
   PET_WINDOW_WIDTH,
   PET_WINDOW_HEIGHT,
   SETTING_SHOW_WINDOW_FRAME,
+  type PetHitRegion,
+  type PetHitState,
 } from '../shared/config/pet-window';
 import {
   createContextMenu,
@@ -19,6 +21,12 @@ import {
   normalizePetDesktopConfig,
   type PetDesktopConfig,
 } from '../shared/config/pet-desktop-settings';
+import {
+  REFERENCE_DISPLAY_SCALE,
+  applyDisplayScaleToModelScale,
+  scaleDragMetrics,
+  type ScaledDragMetrics,
+} from '../shared/config/display-scale';
 
 // ============================================================
 // 类型定义 (基于 contracts/ipc-api.md)
@@ -64,6 +72,7 @@ interface DisplayInfo {
   id: number;
   bounds: { x: number; y: number; width: number; height: number };
   isPrimary: boolean;
+  scaleFactor: number;
 }
 
 // Window API
@@ -74,7 +83,10 @@ interface WindowAPI {
   setAlwaysOnTop(alwaysOnTop: boolean): Promise<void>;
   minimize(): Promise<void>;
   getDisplays(): Promise<DisplayInfo[]>;
+  getDisplayScale(): Promise<number>;
   setClickThrough(enable: boolean, options?: { forward?: boolean }): Promise<void>;
+  updatePetHitRegion(state: PetHitState): void;
+  setClickThroughInteractionLock(locked: boolean): void;
   setResizeFrameEnabled(enabled: boolean): Promise<void>;
   getResizeFrameEnabled(): Promise<boolean>;
   saveLayout(): Promise<void>;
@@ -82,7 +94,7 @@ interface WindowAPI {
 
 // Pet API
 interface PetAPI {
-  getModelUrl?: () => Promise<string | null>;
+  getModelUrl?: (modelFileName?: string | null) => Promise<string | null>;
   getState(): Promise<PetState>;
   setAnimation(animation: AnimationState, options?: AnimationOptions): Promise<void>;
   savePosition(position: PetPosition): Promise<void>;
@@ -169,8 +181,14 @@ let dragStartMouseY = 0;
 let dragStartWindowX = 0;
 let dragStartWindowY = 0;
 
-/** 拖拽阈值（像素），避免误触 */
-const DRAG_THRESHOLD = 2;
+/** 拖拽阈值（像素），避免误触；随 Windows 显示缩放换算 */
+let dragMetrics: ScaledDragMetrics = scaleDragMetrics(REFERENCE_DISPLAY_SCALE);
+
+/** 当前窗口所在显示器的 Windows 缩放倍率 */
+let displayScaleFactor = REFERENCE_DISPLAY_SCALE;
+
+/** 持久化配置中的模型缩放（100% 基准） */
+let storedModelScale = 1;
 
 /** 是否已超过拖拽阈值 */
 let hasDragThresholdMet = false;
@@ -196,21 +214,6 @@ let walkDragFollowRafId: number | null = null;
 let walkFollowLastTickMs = 0;
 let walkChaseTargetLocked = false;
 
-/** 追鼠标时的基础速度（像素/秒，距离近时） */
-const DRAG_FLY_MOVE_SPEED_MIN = 280;
-
-/** 距离较远时的最高速度（像素/秒） */
-const DRAG_FLY_MOVE_SPEED_MAX = 920;
-
-/** 达到最高速度参考距离（像素） */
-const DRAG_FLY_SPEED_DIST_REF = 450;
-
-/** 与目标距离小于此值视为「追上鼠标」（屏幕像素） */
-const DRAG_FLY_ARRIVE_DIST = 18;
-
-/** 接近目标时减速半径（越大越不易飞过头） */
-const DRAG_FLY_EASE_RADIUS = 220;
-
 /** 模型中心在窗口内的瞄准点（比例，与 pet-renderer 转向一致） */
 const DRAG_FLY_AIM_X_RATIO = 0.5;
 const DRAG_FLY_AIM_Y_RATIO = 0.52;
@@ -218,23 +221,17 @@ const DRAG_FLY_AIM_Y_RATIO = 0.52;
 /** 鼠标静止多久后切换为悬停动画（毫秒） */
 const FLY_MOUSE_IDLE_MS = 220;
 
-/** 判定鼠标在移动的屏幕像素阈值 */
-const FLY_MOUSE_MOVE_THRESHOLD = 2;
-
 /** 连续几帧同一方向才切换滑翔/悬停，减轻抖动 */
 const FLY_MODE_SWITCH_FRAMES = 3;
 
 /** 进入滑翔循环后，窗口追鼠标速度的渐入时长（毫秒） */
-const FLY_LOOP_CHASE_RAMP_MS = 680;
-
-/** 行走拖拽：追鼠标速度超过此值切 run（像素/秒） */
-const WALK_DRAG_RUN_SPEED = 500;
+const FLY_LOOP_CHASE_RAMP_MS = 460;
 
 /** 行走拖拽：追上鼠标后静止多久切待机（毫秒） */
 const WALK_DRAG_MOUSE_IDLE_MS = 220;
 
 /** 行走拖拽追鼠标速度渐入（毫秒） */
-const WALK_LOOP_CHASE_RAMP_MS = 280;
+const WALK_LOOP_CHASE_RAMP_MS = 200;
 
 let flyMouseIdleTimer: ReturnType<typeof setTimeout> | null = null;
 let walkMouseIdleTimer: ReturnType<typeof setTimeout> | null = null;
@@ -271,15 +268,50 @@ let viewportResizeRafId: number | null = null;
 
 let petContextMenu: IContextMenu | null = null;
 let contextMenuOpen = false;
+
+/** 最近一次鼠标位置（client 与窗口局部坐标） */
 let lastPointerClientX = 0;
 let lastPointerClientY = 0;
+let lastPointerLocalX = 0;
+let lastPointerLocalY = 0;
+let hasPointerPosition = false;
 let showWindowFrameEnabled = false;
 /** 当前已加载的模型文件名（与配置 modelFileName 对比以触发重载） */
 let loadedModelFileName: string | null = null;
+/** 防止并发/重复 GLB 重载导致卡死 */
+let modelLoadInProgress = false;
 
 // ============================================================
 // 工具函数
 // ============================================================
+
+async function refreshDisplayScaleFactor(): Promise<void> {
+  const api = getElectronAPI();
+  if (!api?.window?.getDisplayScale) {
+    return;
+  }
+
+  try {
+    const nextScale = await api.window.getDisplayScale();
+    if (!Number.isFinite(nextScale) || nextScale <= 0) {
+      return;
+    }
+    if (Math.abs(nextScale - displayScaleFactor) < 0.001) {
+      return;
+    }
+
+    displayScaleFactor = nextScale;
+    dragMetrics = scaleDragMetrics(displayScaleFactor);
+
+    if (petRenderer && !usePlaceholderPet) {
+      petRenderer.setModelScaleFactor(
+        applyDisplayScaleToModelScale(storedModelScale, displayScaleFactor)
+      );
+    }
+  } catch (error) {
+    console.warn('[Renderer] Failed to refresh display scale factor:', error);
+  }
+}
 
 /**
  * 通过 rAF 合并窗口移动请求，避免 await IPC 阻塞导致拖动滞后
@@ -383,7 +415,7 @@ function walkChaseDistance(): number {
 }
 
 function isWalkChaseComplete(): boolean {
-  return walkChaseDistance() <= DRAG_FLY_ARRIVE_DIST;
+  return walkChaseDistance() <= dragMetrics.flyArriveDist;
 }
 
 function updateWalkDragFollowTargetFromMouse(screenX: number, screenY: number): void {
@@ -443,7 +475,7 @@ function updateWalkDragLocomotionFromChaseSpeed(chaseSpeedPxPerSec: number): voi
     return;
   }
   if (
-    chaseSpeedPxPerSec >= WALK_DRAG_RUN_SPEED &&
+    chaseSpeedPxPerSec >= dragMetrics.walkDragRunSpeed &&
     petRenderer.hasWalkDragRunClip()
   ) {
     petRenderer.setWalkDragLocomotion('run');
@@ -494,35 +526,29 @@ async function beginWalkDragFollowFromWindow(): Promise<void> {
     const dy = walkFollowTargetY - walkFollowPosY;
     const dist = Math.hypot(dx, dy);
 
+    let moveDx = 0;
+    let moveDy = 0;
     let chaseSpeed = 0;
     if (dist < 1) {
       walkFollowPosX = walkFollowTargetX;
       walkFollowPosY = walkFollowTargetY;
     } else {
-      const ease = Math.max(0.15, Math.min(1, dist / DRAG_FLY_EASE_RADIUS));
-      const chaseRamp = Math.max(0.14, walkLoopChaseRampFactor(now));
+      const ease = Math.max(0.32, Math.min(1, dist / dragMetrics.flyEaseRadius));
+      const chaseRamp = Math.max(0.32, walkLoopChaseRampFactor(now));
       const speed = flyMoveSpeedForDistance(dist) * chaseRamp;
       const step = speed * dt * ease;
       const move = Math.min(step, dist);
       chaseSpeed = move / Math.max(dt, 0.001);
-      walkFollowPosX += (dx / dist) * move;
-      walkFollowPosY += (dy / dist) * move;
+      moveDx = (dx / dist) * move;
+      moveDy = (dy / dist) * move;
+      walkFollowPosX += moveDx;
+      walkFollowPosY += moveDy;
     }
 
     scheduleWindowMove(walkFollowPosX, walkFollowPosY);
 
     const chaseComplete = isWalkChaseComplete();
-    petRenderer.updateWalkDragLoopInput(
-      0,
-      0,
-      lastMouseScreenX,
-      lastMouseScreenY,
-      walkFollowPosX,
-      walkFollowPosY,
-      window.innerWidth,
-      window.innerHeight,
-      chaseComplete
-    );
+    petRenderer.updateWalkDragLoopInput(moveDx, moveDy, chaseComplete);
 
     if (chaseComplete && walkCoastToRelease) {
       if (isDragging) {
@@ -562,13 +588,16 @@ function flyChaseDistance(): number {
 }
 
 function isFlyChaseComplete(): boolean {
-  return flyChaseDistance() <= DRAG_FLY_ARRIVE_DIST;
+  return flyChaseDistance() <= dragMetrics.flyArriveDist;
 }
 
 /** 距离越远飞得越快（平方根曲线，远端加速更明显） */
 function flyMoveSpeedForDistance(dist: number): number {
-  const t = Math.min(1, dist / DRAG_FLY_SPEED_DIST_REF);
-  return DRAG_FLY_MOVE_SPEED_MIN + (DRAG_FLY_MOVE_SPEED_MAX - DRAG_FLY_MOVE_SPEED_MIN) * Math.sqrt(t);
+  const t = Math.min(1, dist / dragMetrics.flySpeedDistRef);
+  return (
+    dragMetrics.flyMoveSpeedMin +
+    (dragMetrics.flyMoveSpeedMax - dragMetrics.flyMoveSpeedMin) * Math.sqrt(t)
+  );
 }
 
 /** 起飞切入循环后，移动速度从低到满（ease-in） */
@@ -668,33 +697,27 @@ async function beginDragFollowFromWindow(): Promise<void> {
     const dy = flyFollowTargetY - flyFollowPosY;
     const dist = Math.hypot(dx, dy);
 
+    let moveDx = 0;
+    let moveDy = 0;
     if (dist < 1) {
       flyFollowPosX = flyFollowTargetX;
       flyFollowPosY = flyFollowTargetY;
     } else {
-      const ease = Math.max(0.15, Math.min(1, dist / DRAG_FLY_EASE_RADIUS));
-      const chaseRamp = Math.max(0.14, flyLoopChaseRampFactor(now));
+      const ease = Math.max(0.32, Math.min(1, dist / dragMetrics.flyEaseRadius));
+      const chaseRamp = Math.max(0.32, flyLoopChaseRampFactor(now));
       const speed = flyMoveSpeedForDistance(dist) * chaseRamp;
       const step = speed * dt * ease;
       const move = Math.min(step, dist);
-      flyFollowPosX += (dx / dist) * move;
-      flyFollowPosY += (dy / dist) * move;
+      moveDx = (dx / dist) * move;
+      moveDy = (dy / dist) * move;
+      flyFollowPosX += moveDx;
+      flyFollowPosY += moveDy;
     }
 
     scheduleWindowMove(flyFollowPosX, flyFollowPosY);
 
     const chaseComplete = isFlyChaseComplete();
-    petRenderer.updateDragFlyLoopInput(
-      0,
-      0,
-      lastMouseScreenX,
-      lastMouseScreenY,
-      flyFollowPosX,
-      flyFollowPosY,
-      window.innerWidth,
-      window.innerHeight,
-      chaseComplete
-    );
+    petRenderer.updateDragFlyLoopInput(moveDx, moveDy, chaseComplete);
 
     if (chaseComplete && flyCoastToRelease) {
       flyCoastToRelease = false;
@@ -779,23 +802,15 @@ function restoreWindowSizeAfterFly(): void {
   savedFlyWindowSize = null;
 }
 
-async function setContextMenuInteractionLock(locked: boolean): Promise<void> {
+function setClickThroughInteractionLock(locked: boolean): void {
+  getElectronAPI()?.window?.setClickThroughInteractionLock?.(locked);
+}
+
+function setContextMenuInteractionLock(locked: boolean): void {
   contextMenuOpen = locked;
-  const api = getElectronAPI();
-  if (!api?.window?.setClickThrough) {
-    return;
-  }
-  if (locked) {
-    isClickThroughEnabled = false;
-    try {
-      await api.window.setClickThrough(false);
-    } catch (error) {
-      console.error('[Renderer] Failed to disable click-through for menu:', error);
-    }
-    return;
-  }
-  if (!showWindowFrameEnabled) {
-    await updateClickThrough(lastPointerClientX, lastPointerClientY);
+  setClickThroughInteractionLock(locked);
+  if (!locked) {
+    pushPetHitRegionToMain();
   }
 }
 
@@ -803,9 +818,7 @@ async function showPetContextMenu(clientX: number, clientY: number): Promise<voi
   if (!petContextMenu) {
     return;
   }
-  lastPointerClientX = clientX;
-  lastPointerClientY = clientY;
-  await setContextMenuInteractionLock(true);
+  setContextMenuInteractionLock(true);
   petContextMenu.checkItem('showWindowFrame', showWindowFrameEnabled);
   petContextMenu.show(clientX, clientY);
 }
@@ -824,10 +837,6 @@ async function applyWindowFrameMode(showFrame: boolean, persist = true): Promise
   }
 
   if (showFrame) {
-    isClickThroughEnabled = false;
-    if (api?.window?.setClickThrough) {
-      await api.window.setClickThrough(false);
-    }
     petRenderer?.resize(window.innerWidth, window.innerHeight);
   }
 
@@ -883,7 +892,7 @@ function applyModelPlaybackSettings(
 }
 
 async function reloadPetModelFromConfig(config?: PetDesktopConfig): Promise<void> {
-  if (!petRenderer || usePlaceholderPet) {
+  if (!petRenderer || modelLoadInProgress) {
     return;
   }
 
@@ -925,7 +934,8 @@ async function applyDesktopConfig(
     !usePlaceholderPet &&
     petRenderer.getPlaybackSpeed() !== normalized.playbackSpeed;
 
-  if (modelChanged && options.persist) {
+  // 切换模型必须重载 GLB：否则仍显示旧 mesh 但套用新 modelScale（如从裘卡 0.15 切到 1.0 会瞬间变大）
+  if (modelChanged) {
     await reloadPetModelFromConfig(normalized);
   } else if (petRenderer && !usePlaceholderPet && (fpsChanged || playbackSpeedChanged)) {
     applyModelPlaybackSettings(normalized);
@@ -933,16 +943,19 @@ async function applyDesktopConfig(
   }
 
   if (petRenderer && !usePlaceholderPet) {
-    petRenderer.setModelScaleFactor(normalized.modelScale);
-    petRenderer.setModelBrightness(normalized.modelBrightness);
-    // 模型重载时已在 loadPetModel 内应用；此处再 force 会 rebuild 并 stopAllAction，打断入场/待机
+    storedModelScale = normalized.modelScale;
+    // 重载路径已在 loadPetModel → applyDesktopConfig 内写入缩放/亮度，避免对旧 mesh 误乘新倍率
     if (!modelChanged) {
+      petRenderer.setModelScaleFactor(
+        applyDisplayScaleToModelScale(storedModelScale, displayScaleFactor)
+      );
+      petRenderer.setModelBrightness(normalized.modelBrightness);
       applyModelPlaybackSettings(normalized);
     }
     petRenderer.setClickAnimationSettings(clickAnimation);
   }
 
-  if (petRenderer && !usePlaceholderPet && modelChanged && options.persist) {
+  if (petRenderer && !usePlaceholderPet && modelChanged) {
     petRenderer.beginPresentationAfterModelLoad();
   }
 
@@ -1128,19 +1141,10 @@ let placeholderScene: import('three').Scene | null = null;
 let placeholderCamera: import('three').PerspectiveCamera | null = null;
 
 // ============================================================
-// 点击穿透状态
+// 点击穿透：主进程光标轮询 + 渲染进程推送命中区域
 // ============================================================
 
-/** 当前是否启用点击穿透 */
-let isClickThroughEnabled = true;
-
-/** 上次更新穿透状态的时间（用于节流） */
-let lastClickThroughUpdateTime = 0;
-
-/** 穿透状态更新的节流间隔（毫秒） */
-const CLICK_THROUGH_THROTTLE_MS = 50;
-
-/** 射线检测器 */
+/** 射线检测器（占位宠物） */
 let raycaster: import('three').Raycaster | null = null;
 
 /** 当前占位宠物动画状态 */
@@ -1236,6 +1240,9 @@ async function initThreeJS(): Promise<void> {
       onViewportResizeRequest: (size) => {
         scheduleViewportResize(size.width, size.height);
       },
+      onFrame: () => {
+        pushPetHitRegionToMain();
+      },
       onError: (error) => {
         console.error('[Renderer] Renderer error:', error);
         // 如果使用占位宠物，不显示模型加载错误（占位宠物已成功显示）
@@ -1257,71 +1264,87 @@ async function initThreeJS(): Promise<void> {
  * 如果没有模型文件，创建占位3D对象
  */
 async function loadPetModel(configOverride?: PetDesktopConfig): Promise<void> {
-  console.log('[Renderer] Loading pet model...');
-  
   if (!petRenderer) {
     throw new Error('渲染器未初始化');
   }
-
-  // 预设使用占位宠物标志（因为 onError 回调可能在 catch 之前触发）
-  // 如果模型加载成功，会重置此标志
-  usePlaceholderPet = true;
-  
-  // 由主进程解析模型路径（支持任意 .glb 文件名）
-  const modelPaths: string[] = [];
-  const electronAPI = getElectronAPI();
-  if (electronAPI?.pet?.getModelUrl) {
-    const resolvedUrl = await electronAPI.pet.getModelUrl();
-    if (resolvedUrl) {
-      modelPaths.push(resolvedUrl);
-    }
+  if (modelLoadInProgress) {
+    console.warn('[Renderer] Model load already in progress, skipping duplicate request');
+    return;
   }
 
-  // 兼容旧路径（Vite publicDir=assets → /models/xxx.glb）
-  modelPaths.push(
-    '/models/default-pet.glb',
-    '/models/pet-default.glb',
-    '/models/pet.glb',
+  modelLoadInProgress = true;
+  console.log('[Renderer] Loading pet model...');
+
+  try {
+    // 预设使用占位宠物标志（因为 onError 回调可能在 catch 之前触发）
+    // 如果模型加载成功，会重置此标志
+    usePlaceholderPet = true;
+
+    const resolvedConfig = normalizePetDesktopConfig(
+    configOverride ??
+      (await getElectronAPI()?.pet?.getDesktopConfig?.()) ??
+      {}
   );
+    const effectiveModelScale = applyDisplayScaleToModelScale(
+      resolvedConfig.modelScale,
+      displayScaleFactor
+    );
 
-  let modelLoaded = false;
-
-  for (const modelPath of modelPaths) {
-    try {
-      console.log(`[Renderer] Trying to load model: ${modelPath}`);
-      await petRenderer.loadModel({
-        modelPath,
-        autoFit: true,
-      });
-      modelLoaded = true;
-      usePlaceholderPet = false;
-      const resolvedConfig = normalizePetDesktopConfig(
-        configOverride ??
-          (await getElectronAPI()?.pet?.getDesktopConfig?.()) ??
-          {}
-      );
-      loadedModelFileName = resolvedConfig.modelFileName;
-      applyModelPlaybackSettings(resolvedConfig, { force: true });
-      console.log(
-        `[Renderer] Pet model loaded from: ${modelPath}, animation: ${petRenderer.getCurrentAnimation() ?? 'none'}`
-      );
-      refreshPetContextMenu();
-      reportAnimationClipsToMain();
-      await applyDesktopConfig(resolvedConfig, { persist: false });
-      await enablePetInteraction();
-      break;
-    } catch (error) {
-      console.error(`[Renderer] Model load failed: ${modelPath}`, error);
+    // 由主进程解析模型路径（支持任意 .glb 文件名）
+    const modelPaths: string[] = [];
+    const electronAPI = getElectronAPI();
+    if (electronAPI?.pet?.getModelUrl) {
+      const resolvedUrl = await electronAPI.pet.getModelUrl(resolvedConfig.modelFileName);
+      if (resolvedUrl) {
+        modelPaths.push(resolvedUrl);
+      }
     }
-  }
-  
-  // 如果所有模型都加载失败，创建占位宠物
-  if (!modelLoaded) {
-    console.log('[Renderer] No model files found, creating placeholder pet...');
-    console.log('[Renderer] 提示：将 .glb 模型放入 assets/models/ 后重启应用（推荐命名为 default-pet.glb）');
-    // usePlaceholderPet 已经是 true，保持不变
-    await createPlaceholderPet();
-    console.log('[Renderer] Placeholder pet created and displayed successfully');
+
+    // 兼容旧路径（Vite publicDir=assets → /models/xxx.glb）
+    modelPaths.push(
+      '/models/default-pet.glb',
+      '/models/pet-default.glb',
+      '/models/pet.glb'
+    );
+
+    let modelLoaded = false;
+
+    for (const modelPath of modelPaths) {
+      try {
+        console.log(`[Renderer] Trying to load model: ${modelPath}`);
+        await petRenderer.loadModel({
+          modelPath,
+          autoFit: true,
+          modelScaleFactor: effectiveModelScale,
+        });
+        modelLoaded = true;
+        usePlaceholderPet = false;
+        loadedModelFileName = resolvedConfig.modelFileName;
+        applyModelPlaybackSettings(resolvedConfig, { force: true });
+        console.log(
+          `[Renderer] Pet model loaded from: ${modelPath}, animation: ${petRenderer.getCurrentAnimation() ?? 'none'}`
+        );
+        refreshPetContextMenu();
+        reportAnimationClipsToMain();
+        await applyDesktopConfig(resolvedConfig, { persist: false });
+        pushPetHitRegionToMain();
+        break;
+      } catch (error) {
+        console.error(`[Renderer] Model load failed: ${modelPath}`, error);
+      }
+    }
+
+    // 如果所有模型都加载失败，创建占位宠物
+    if (!modelLoaded) {
+      console.log('[Renderer] No model files found, creating placeholder pet...');
+      console.log(
+        '[Renderer] 提示：将 .glb 模型放入 assets/models/ 后重启应用（推荐命名为 default-pet.glb）'
+      );
+      await createPlaceholderPet();
+      console.log('[Renderer] Placeholder pet created and displayed successfully');
+    }
+  } finally {
+    modelLoadInProgress = false;
   }
 }
 
@@ -1481,6 +1504,7 @@ async function createPlaceholderPet(): Promise<void> {
     applyPlaceholderAnimationEffects(time);
     
     renderer.render(scene, camera);
+    pushPetHitRegionToMain();
   }
   
   // 启动动画
@@ -1703,65 +1727,112 @@ function checkMouseOnPet(clientX: number, clientY: number): boolean {
 }
 
 /**
- * 模型加载后启用宠物区域交互（关闭全窗口穿透）
+ * 光标捕获命中（穿透切换用，占位宠物仅射线）
  */
-async function enablePetInteraction(): Promise<void> {
-  const api = getElectronAPI();
-  if (!api?.window?.setClickThrough) {
-    return;
+function checkPointerCaptureOnPet(clientX: number, clientY: number): boolean {
+  if (!usePlaceholderPet && petRenderer?.isInitialized()) {
+    return petRenderer.hitTestPointerCapture(clientX, clientY);
   }
-  isClickThroughEnabled = false;
-  try {
-    await api.window.setClickThrough(false);
-    console.log('[Renderer] Pet interaction enabled (click-through off)');
-  } catch (error) {
-    console.error('[Renderer] Failed to enable pet interaction:', error);
-  }
+  return checkMouseOnPet(clientX, clientY);
 }
 
 /**
- * 更新点击穿透状态
- * 根据鼠标是否在宠物上动态切换穿透状态
- * @param clientX 鼠标相对于视口的 X 坐标
- * @param clientY 鼠标相对于视口的 Y 坐标
+ * 更新记录的指针位置
  */
-async function updateClickThrough(clientX: number, clientY: number): Promise<void> {
-  if (showWindowFrameEnabled || contextMenuOpen || petContextMenu?.isOpen) {
-    return;
+function trackPointerPosition(clientX: number, clientY: number): void {
+  lastPointerClientX = clientX;
+  lastPointerClientY = clientY;
+  const rect = petContainer.getBoundingClientRect();
+  lastPointerLocalX = clientX - rect.left;
+  lastPointerLocalY = clientY - rect.top;
+  hasPointerPosition = true;
+}
+
+/**
+ * 占位宠物投影包围盒（容器局部像素）
+ */
+function getPlaceholderHitRegion(): PetHitRegion | null {
+  if (!placeholderCamera || !placeholderPetGroup || !THREE) {
+    return null;
   }
-  const api = getElectronAPI();
-  if (!api?.window?.setClickThrough) return;
-  
-  // 节流控制：避免频繁调用 IPC
-  const now = Date.now();
-  if (now - lastClickThroughUpdateTime < CLICK_THROUGH_THROTTLE_MS) {
-    return;
+
+  placeholderPetGroup.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(placeholderPetGroup);
+  if (box.isEmpty()) {
+    return null;
   }
-  lastClickThroughUpdateTime = now;
-  
-  // 检测鼠标是否在宠物上
-  const isOnPet = checkMouseOnPet(clientX, clientY);
-  
-  // 如果状态没有变化，不需要更新
-  const shouldEnableClickThrough = !isOnPet;
-  if (shouldEnableClickThrough === isClickThroughEnabled) {
-    return;
-  }
-  
-  // 更新穿透状态
-  isClickThroughEnabled = shouldEnableClickThrough;
-  
-  try {
-    if (isClickThroughEnabled) {
-      // 鼠标不在宠物上，启用穿透（鼠标可以穿透到窗口后面）
-      await api.window.setClickThrough(true, { forward: true });
-    } else {
-      // 鼠标在宠物上，禁用穿透（可以与宠物交互）
-      await api.window.setClickThrough(false);
+
+  const corners = [
+    new THREE.Vector3(box.min.x, box.min.y, box.min.z),
+    new THREE.Vector3(box.min.x, box.min.y, box.max.z),
+    new THREE.Vector3(box.min.x, box.max.y, box.min.z),
+    new THREE.Vector3(box.min.x, box.max.y, box.max.z),
+    new THREE.Vector3(box.max.x, box.min.y, box.min.z),
+    new THREE.Vector3(box.max.x, box.min.y, box.max.z),
+    new THREE.Vector3(box.max.x, box.max.y, box.min.z),
+    new THREE.Vector3(box.max.x, box.max.y, box.max.z),
+  ];
+
+  const projected = new THREE.Vector3();
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  const bounds = petContainer.getBoundingClientRect();
+  const w = bounds.width > 0 ? bounds.width : PET_WINDOW_WIDTH;
+  const h = bounds.height > 0 ? bounds.height : PET_WINDOW_HEIGHT;
+
+  for (const corner of corners) {
+    projected.copy(corner);
+    projected.project(placeholderCamera);
+    if (projected.z > 1) {
+      continue;
     }
-  } catch (error) {
-    console.error('[Renderer] Failed to update click-through state:', error);
+    const sx = (projected.x * 0.5 + 0.5) * w;
+    const sy = (-projected.y * 0.5 + 0.5) * h;
+    minX = Math.min(minX, sx);
+    maxX = Math.max(maxX, sx);
+    minY = Math.min(minY, sy);
+    maxY = Math.max(maxY, sy);
   }
+
+  if (!Number.isFinite(minX)) {
+    return null;
+  }
+
+  return { minX, maxX, minY, maxY };
+}
+
+/**
+ * 将当前宠物命中区域推送给主进程（每帧）
+ */
+function pushPetHitRegionToMain(): void {
+  const api = getElectronAPI();
+  if (!api?.window?.updatePetHitRegion) {
+    return;
+  }
+
+  if (showWindowFrameEnabled || contextMenuOpen) {
+    return;
+  }
+
+  const region: PetHitRegion | null = usePlaceholderPet
+    ? getPlaceholderHitRegion()
+    : petRenderer?.getHitRegionRect() ?? null;
+
+  const pointerOnPet = hasPointerPosition
+    ? checkPointerCaptureOnPet(lastPointerClientX, lastPointerClientY)
+    : false;
+
+  const state: PetHitState = {
+    region,
+    pointerOnPet,
+    pointerLocalX: lastPointerLocalX,
+    pointerLocalY: lastPointerLocalY,
+    hasPointer: hasPointerPosition,
+  };
+
+  api.window.updatePetHitRegion(state);
 }
 
 /**
@@ -1870,6 +1941,11 @@ function initIPCListeners(): void {
       void applyDesktopConfig(config as PetDesktopConfig, { persist: false });
     });
   }
+
+  void refreshDisplayScaleFactor();
+  window.addEventListener('resize', () => {
+    void refreshDisplayScaleFactor();
+  });
   
   console.log('[Renderer] IPC listeners initialized');
 }
@@ -1989,10 +2065,9 @@ function initMouseEvents(): void {
       return;
     }
 
-    // 确保可接收鼠标事件（穿透开启时 mousedown 可能无法触发）
-    if (isClickThroughEnabled) {
-      await enablePetInteraction();
-    }
+    trackPointerPosition(event.clientX, event.clientY);
+    pushPetHitRegionToMain();
+    setClickThroughInteractionLock(true);
 
     console.log('[Renderer] Mouse down at:', event.screenX, event.screenY);
 
@@ -2050,7 +2125,7 @@ function initMouseEvents(): void {
     // 检查是否超过拖拽阈值
     if (!hasDragThresholdMet) {
       const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-      if (distance < DRAG_THRESHOLD) {
+      if (distance < dragMetrics.dragThreshold) {
         return; // 未超过阈值，不视为拖拽
       }
       hasDragThresholdMet = true;
@@ -2087,15 +2162,15 @@ function initMouseEvents(): void {
       const moveDist = Math.hypot(incX, incY);
       const chaseComplete = isWalkChaseComplete();
 
-      if (moveDist > FLY_MOUSE_MOVE_THRESHOLD) {
+      if (moveDist > dragMetrics.flyMouseMoveThreshold) {
         lastFlyMouseMoveMs = performance.now();
         clearWalkMouseIdleTimer();
         if (!chaseComplete) {
           const dist = walkChaseDistance();
-          const ease = Math.max(0.15, Math.min(1, dist / DRAG_FLY_EASE_RADIUS));
+          const ease = Math.max(0.32, Math.min(1, dist / dragMetrics.flyEaseRadius));
           const speed =
             flyMoveSpeedForDistance(dist) *
-            Math.max(0.14, walkLoopChaseRampFactor()) *
+            Math.max(0.32, walkLoopChaseRampFactor()) *
             ease;
           updateWalkDragLocomotionFromChaseSpeed(speed);
         } else {
@@ -2104,18 +2179,6 @@ function initMouseEvents(): void {
       } else if (chaseComplete) {
         scheduleWalkMouseIdle();
       }
-
-      petRenderer.updateWalkDragLoopInput(
-        incX,
-        incY,
-        event.screenX,
-        event.screenY,
-        walkFollowPosX,
-        walkFollowPosY,
-        window.innerWidth,
-        window.innerHeight,
-        chaseComplete
-      );
 
       if (walkDragFollowRafId === null) {
         void beginWalkDragFollowFromWindow();
@@ -2139,7 +2202,7 @@ function initMouseEvents(): void {
       const moveDist = Math.hypot(incX, incY);
       const chaseComplete = isFlyChaseComplete();
 
-      if (moveDist > FLY_MOUSE_MOVE_THRESHOLD) {
+      if (moveDist > dragMetrics.flyMouseMoveThreshold) {
         lastFlyMouseMoveMs = performance.now();
         const isVerticalMove = Math.abs(incY) >= Math.abs(incX) * 1.15;
         if (isVerticalMove) {
@@ -2168,18 +2231,6 @@ function initMouseEvents(): void {
         petRenderer.setFlyLoopHoverMode(false);
       }
 
-      petRenderer.updateDragFlyLoopInput(
-        incX,
-        incY,
-        event.screenX,
-        event.screenY,
-        flyFollowPosX,
-        flyFollowPosY,
-        window.innerWidth,
-        window.innerHeight,
-        chaseComplete
-      );
-
       if (dragFlyFollowRafId === null) {
         void beginDragFollowFromWindow();
       }
@@ -2195,6 +2246,11 @@ function initMouseEvents(): void {
     
     const wasDragging = isDragging && hasDragThresholdMet;
     isDragging = false;
+
+    if (!contextMenuOpen && !petContextMenu?.isOpen) {
+      setClickThroughInteractionLock(false);
+      pushPetHitRegionToMain();
+    }
 
     cancelScheduledWindowMove();
     clearFlyMouseIdleTimer();
@@ -2245,10 +2301,6 @@ function initMouseEvents(): void {
           console.error('[Renderer] Failed to save position:', error);
         }
       }
-      
-      // 拖动结束后，立即重新检测并更新点击穿透状态
-      // 这确保了如果鼠标已经移出宠物区域，穿透状态能正确恢复
-      await updateClickThrough(event.clientX, event.clientY);
     }
   });
   
@@ -2262,12 +2314,15 @@ function initMouseEvents(): void {
       return;
     }
     
-    if (!petRenderer?.isInitialized() || !petRenderer.hitTest(event.clientX, event.clientY)) {
+    if (!petRenderer?.isInitialized() && !usePlaceholderPet) {
+      return;
+    }
+    if (!checkMouseOnPet(event.clientX, event.clientY)) {
       return;
     }
 
     console.log('[Renderer] Click on pet at:', event.clientX, event.clientY);
-    petRenderer.playInteractionReaction();
+    petRenderer?.playInteractionReaction();
   });
   
   // --------------------------------------------------------
@@ -2276,8 +2331,8 @@ function initMouseEvents(): void {
   targetElement.addEventListener('dblclick', (event: MouseEvent) => {
     console.log('[Renderer] Double click detected at:', event.clientX, event.clientY);
     
-    if (petRenderer?.isInitialized() && petRenderer.hitTest(event.clientX, event.clientY)) {
-      petRenderer.playInteractionReaction();
+    if (checkMouseOnPet(event.clientX, event.clientY)) {
+      petRenderer?.playInteractionReaction();
     }
   });
   
@@ -2340,25 +2395,11 @@ function initMouseEvents(): void {
     }
     hasDragThresholdMet = false;
   });
-  
-  // --------------------------------------------------------
-  // 全局鼠标移动 - 动态切换点击穿透状态
-  // --------------------------------------------------------
+
   document.addEventListener('mousemove', (event: MouseEvent) => {
-    lastPointerClientX = event.clientX;
-    lastPointerClientY = event.clientY;
-
-    // 拖拽时保持可交互
-    if (isDragging) {
-      if (isClickThroughEnabled) {
-        void enablePetInteraction();
-      }
-      return;
-    }
-
-    updateClickThrough(event.clientX, event.clientY);
+    trackPointerPosition(event.clientX, event.clientY);
   });
-  
+
   console.log('[Renderer] Mouse events initialized');
 }
 
@@ -2374,6 +2415,8 @@ async function init(): Promise<void> {
   
   try {
     showLoading();
+
+    await refreshDisplayScaleFactor();
     
     // 1. 初始化 Three.js 场景
     await initThreeJS();
@@ -2401,6 +2444,8 @@ async function init(): Promise<void> {
     if (petRenderer && !usePlaceholderPet) {
       petRenderer.beginPresentationAfterModelLoad();
     }
+
+    pushPetHitRegionToMain();
     
     // 9. 隐藏加载状态
     hideLoading();

@@ -31,6 +31,7 @@ import {
   validatePetSkinInput,
   UpdatePetSkinInput,
 } from '../../shared/models/pet-skin';
+import { normalizePetDesktopConfig } from '../../shared/config/pet-desktop-settings';
 import { loadPetDesktopConfig } from '../pet-desktop-config-store';
 import { getPetModelLoadUrl, resolvePetModelFilePath } from '../utils/pet-model-path';
 
@@ -877,11 +878,17 @@ async function handleEnsureDefaultSkin(_event: IpcMainInvokeEvent): Promise<PetS
 /**
  * 获取宠物 3D 模型加载 URL
  */
-async function handleGetModelUrl(_event: IpcMainInvokeEvent): Promise<string | null> {
+async function handleGetModelUrl(
+  _event: IpcMainInvokeEvent,
+  modelFileName?: string | null
+): Promise<string | null> {
   try {
-    const modelFileName = loadPetDesktopConfig().modelFileName;
-    const url = getPetModelLoadUrl(modelFileName);
-    const filePath = resolvePetModelFilePath(modelFileName);
+    const resolvedName =
+      modelFileName !== undefined
+        ? normalizePetDesktopConfig({ modelFileName }).modelFileName
+        : loadPetDesktopConfig().modelFileName;
+    const url = getPetModelLoadUrl(resolvedName);
+    const filePath = resolvePetModelFilePath(resolvedName);
     const fileInfo =
       filePath && fs.existsSync(filePath)
         ? { path: filePath, sizeMB: (fs.statSync(filePath).size / 1024 / 1024).toFixed(1) }
